@@ -1,0 +1,17 @@
+[tool.isort]
+profile = "black"
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-vq -p no:legacypath --color=yes --durations=10 --showlocals"
+testpaths = [
+    "tests",
+]
+filterwarnings = "ignore::DeprecationWarning"
+
+[tool.codespell]
+skip = "*.ipynb"
+ignore-words-list="crate,nd,strack,dota,fof,fot,fo"
+
+[tool.black]
+target-version = ["py310", "py311"]
