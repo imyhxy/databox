@@ -6,6 +6,7 @@ import os.path as osp
 from glob import glob
 
 from utils import search_images
+from utils.general import calculate_split_ratios
 
 
 def parse_args():
@@ -52,10 +53,7 @@ def split_imagedir(
 def main():
     opt = parse_args()
 
-    split_ratios = [float(x) for x in opt.split_ratios.split(":")]
-    for i in range(1, len(split_ratios)):
-        split_ratios[i] = split_ratios[i - 1] + split_ratios[i]
-    split_ratios = [x / split_ratios[-1] for x in split_ratios]
+    split_ratios = calculate_split_ratios(opt.split_ratios)
 
     if opt.categories == "auto":
         categories = sorted(
