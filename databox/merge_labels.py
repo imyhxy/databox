@@ -1,6 +1,10 @@
 # Author: imyhxy
 # File: merge_labels.py
 # Date: 11/25/23
+"""
+Recursively search for subdirectories "train.txt", "test.txt" and "val.txt"
+files and merge them according to the name.
+"""
 import argparse
 import os.path as osp
 from glob import glob
@@ -39,7 +43,7 @@ def main():
             cls_stat[key] = cls_stat.get(key, 0) + 1
 
     total = sum(cls_stat.values())
-    class_num = 2
+    class_num = 3
     print(
         "Inverse weight     :",
         [round(total / cls_stat[str(x)], 2) for x in range(class_num)],
