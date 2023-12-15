@@ -2,8 +2,8 @@
 # File: anno2labeltxt.py
 # Date: 11/30/23
 import argparse
-import os.path as osp
 import xml.etree.ElementTree as ET
+from pathlib import Path
 
 
 def parse_args():
@@ -41,7 +41,7 @@ def main():
             path = path[removed_len:]
 
         if args.prefix is not None:
-            path = osp.join(args.prefix, path)
+            path = str(Path(args.prefix) / path)
 
         tag = img.find("tag")
         if tag is None:
@@ -53,7 +53,7 @@ def main():
         label = f"{path} {idx}\n"
         labels.append(label)
 
-    with open(args.output, "w") as f:
+    with Path(args.anno_file).with_name(args.output).open("w") as f:
         f.writelines(labels)
 
 
