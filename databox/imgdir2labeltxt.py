@@ -1,6 +1,25 @@
 # Author: imyhxy
 # File: imgdir2labeltxt.py
 # Date: 12/14/23
+"""
+Convert a yolov5 classification style dataset to a mmlab style dataset.
+
+YOLOv5-style dataset:
+root/
+    train/
+        cls1/
+        cls2/
+    val/
+        cls1/
+        cls2/
+
+mmlab-style dataset:
+root/
+    dir1/
+    dir2/
+    train.txt
+    val.txt
+"""
 import argparse
 from pathlib import Path
 

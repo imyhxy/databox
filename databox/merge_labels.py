@@ -31,9 +31,9 @@ def main():
         if len(splits) != 0:
             with open(osp.join(args.root, f"{split}.txt"), "w") as f:
                 for file in splits:
-                    dirname = Path(file).parent
+                    dir_name = Path(file).parent
                     with open(file) as d:
-                        labels = [osp.join(dirname, x) for x in d.readlines()]
+                        labels = [osp.join(dir_name, x) for x in d.readlines()]
                     f.writelines(labels)
 
     cls_stat = dict()
@@ -43,7 +43,7 @@ def main():
             cls_stat[key] = cls_stat.get(key, 0) + 1
 
     total = sum(cls_stat.values())
-    class_num = 3
+    class_num = len(cls_stat)
     print(
         "Inverse weight     :",
         [round(total / cls_stat[str(x)], 2) for x in range(class_num)],
