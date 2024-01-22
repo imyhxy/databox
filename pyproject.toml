@@ -14,4 +14,4 @@ skip = "*.ipynb"
 ignore-words-list="crate,nd,strack,dota,fof,fot,fo"
 
 [tool.black]
-target-version = ["py310", "py311"]
+target-version = ["py310", "py311", "py312"]
