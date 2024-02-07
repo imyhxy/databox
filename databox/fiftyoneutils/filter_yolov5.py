@@ -40,13 +40,13 @@ def filter_yolov5(input_dir: str, output_dir: str):
 
     for split in {"train", "test", "val"}:
         if split not in config:
-            print(f"Skipping {split} for {input_dir}")
             continue
 
         ds = fo.Dataset.from_dir(
             dataset_dir=input_dir,
             dataset_type=fot.YOLOv5Dataset,
             split=split,
+            progress=True,
         )
         mapping = {
             "person": "person",
@@ -55,11 +55,13 @@ def filter_yolov5(input_dir: str, output_dir: str):
             "bus": "vehicle",
         }
 
+        classes = ["person", "vehicle"]
+
         view = ds.map_labels("ground_truth", mapping)
 
         view = view.filter_labels(
             "ground_truth.detections",
-            F("label").is_in(set(mapping.values())),
+            F("label").is_in(classes),
             only_matches=False,
         )
 
@@ -69,6 +71,7 @@ def filter_yolov5(input_dir: str, output_dir: str):
             split=split,
             yaml_path="dataset.yaml",
             export_media="symlink",
+            classes=classes,
         )
 
         shutil.rmtree(os.path.join(output_dir, "images"))
@@ -89,7 +92,10 @@ def main():
         for inp_dir in Path(args.input_dir).glob("*"):
             if inp_dir.is_dir():
                 out_dir = Path(args.output_dir) / inp_dir.name
-                filter_yolov5(str(inp_dir), str(out_dir))
+                try:
+                    filter_yolov5(str(inp_dir), str(out_dir))
+                except AssertionError:
+                    pass
     else:
         filter_yolov5(args.input_dir, args.output_dir)
 
