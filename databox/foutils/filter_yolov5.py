@@ -47,6 +47,7 @@ def filter_yolov5(input_dir: str, output_dir: str):
             dataset_type=fot.YOLOv5Dataset,
             split=split,
             progress=True,
+            include_all_data=True,
         )
         mapping = {
             "person": "person",
@@ -60,7 +61,7 @@ def filter_yolov5(input_dir: str, output_dir: str):
         view = ds.map_labels("ground_truth", mapping)
 
         view = view.filter_labels(
-            "ground_truth.detections",
+            "ground_truth",
             F("label").is_in(classes),
             only_matches=False,
         )
@@ -74,12 +75,20 @@ def filter_yolov5(input_dir: str, output_dir: str):
             classes=classes,
         )
 
-        shutil.rmtree(os.path.join(output_dir, "images"))
-
     src_images = os.path.join(input_dir, "images")
     dst_images = os.path.join(output_dir, "images")
+    shutil.rmtree(dst_images)
+    os.makedirs(dst_images, exist_ok=True)
     assert os.path.isdir(src_images), "Source directory does not exists."
-    os.symlink(os.path.relpath(src_images, output_dir), dst_images)
+
+    for root, dirs, files in os.walk(src_images, followlinks=True):
+        dst_root = os.path.join(dst_images, os.path.relpath(root, src_images))
+        os.makedirs(dst_root, exist_ok=True)
+
+        for f in files:
+            src_f = os.path.join(src_images, root, f)
+            dst_f = os.path.join(dst_root, f)
+            os.symlink(os.path.relpath(src_f, dst_root), dst_f)
 
 
 def main():
