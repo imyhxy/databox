@@ -103,7 +103,8 @@ def main():
                 out_dir = Path(args.output_dir) / inp_dir.name
                 try:
                     filter_yolov5(str(inp_dir), str(out_dir))
-                except AssertionError:
+                except AssertionError as e:
+                    print(e.args)
                     pass
     else:
         filter_yolov5(args.input_dir, args.output_dir)
