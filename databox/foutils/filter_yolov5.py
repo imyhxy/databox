@@ -50,13 +50,12 @@ def filter_yolov5(input_dir: str, output_dir: str):
             include_all_data=True,
         )
         mapping = {
-            "person": "person",
             "car": "vehicle",
             "truck": "vehicle",
             "bus": "vehicle",
         }
 
-        classes = ["person", "vehicle"]
+        classes = ["vehicle"]
 
         view = ds.map_labels("ground_truth", mapping)
 
