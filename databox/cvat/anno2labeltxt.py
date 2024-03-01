@@ -2,6 +2,7 @@
 # File: anno2labeltxt.py
 # Date: 11/30/23
 import argparse
+import os.path as osp
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -41,7 +42,7 @@ def main():
             path = path[removed_len:]
 
         if args.prefix is not None:
-            path = str(Path(args.prefix) / path)
+            path = osp.join(args.prefix, path)
 
         tag = img.find("tag")
         if tag is None:
