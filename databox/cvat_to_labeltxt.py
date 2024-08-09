@@ -1,6 +1,9 @@
-# Author: imyhxy
-# File: anno2labeltxt.py
-# Date: 11/30/23
+# Author: fkwong
+# File: cvat_to_labeltxt.py
+# Date: 8/9/24
+"""
+Convert annotation.xml into labeltxt format.
+"""
 import argparse
 import os.path as osp
 import xml.etree.ElementTree as ET
@@ -9,7 +12,7 @@ from pathlib import Path
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("anno_file", type=str, help="Path to the annotation file")
+    parser.add_argument("annotations", type=str, help="Path to the annotation file")
     parser.add_argument(
         "--strip", type=str, default=None, help="Prefix used to strip image path"
     )
@@ -20,7 +23,7 @@ def parse_args():
         "--sort-classes", action="store_true", help="Sort classes by alphabetical order"
     )
     parser.add_argument(
-        "--output", type=str, required=True, help="Path of output labels txt file"
+        "--out-name", type=str, required=True, help="Name of output labels txt file"
     )
 
     return parser.parse_args()
@@ -28,7 +31,7 @@ def parse_args():
 
 def main():
     args = parse_args()
-    tree = ET.parse(args.anno_file)
+    tree = ET.parse(args.annotations)
 
     categories = [x.text for x in tree.findall(".//label/name")]
     if args.sort_classes:
@@ -37,7 +40,7 @@ def main():
     labels = []
     for img in tree.findall("./image"):
         path = img.attrib["name"]
-        if path.startswith(args.strip):
+        if args.strip and path.startswith(args.strip):
             removed_len = len(args.strip)
             path = path[removed_len:]
 
@@ -51,11 +54,11 @@ def main():
         name = tag.attrib["label"]
         idx = categories.index(name)
 
-        label = f"{path} {idx}\n"
+        label = f"{path} {idx}"
         labels.append(label)
 
-    with Path(args.anno_file).with_name(args.output).open("w") as f:
-        f.writelines(labels)
+    with Path(args.annotations).with_name(args.out_name).open("w") as f:
+        f.write("\n".join(labels))
 
 
 if __name__ == "__main__":
