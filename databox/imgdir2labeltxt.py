@@ -1,8 +1,7 @@
 # Author: imyhxy
 # File: imgdir2labeltxt.py
 # Date: 12/14/23
-"""
-Convert a yolov5 classification style dataset to a mmlab style dataset.
+"""Convert a yolov5 classification style dataset to a mmlab style dataset.
 
 YOLOv5-style dataset:
 root/

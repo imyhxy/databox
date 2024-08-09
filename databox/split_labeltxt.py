@@ -1,11 +1,8 @@
 # Author: imyhxy
 # File: split_labeltxt.py
 # Date: 12/5/23
-"""
-Split label text file into stratified shuffle split.
-"""
+"""Split label text file into stratified shuffle split."""
 import argparse
-from collections import defaultdict
 from pathlib import Path
 
 import yaml
@@ -29,29 +26,6 @@ def parse_args():
     )
 
     return parser.parse_args()
-
-
-def split_labeltxt(
-    path: str,
-    split_ratios: list[float],
-):
-    data = defaultdict(list)
-    with open(path) as f:
-        for item in f:
-            cid = item.strip().split()[1]
-            data[cid].append(item)
-
-    sets = [[] for _ in split_ratios]
-    for cid, labels in data.items():
-        prev = 0
-        labels = sorted(labels)
-        total = len(labels)
-        for idx, ratio in enumerate(split_ratios):
-            curr = int(total * ratio)
-            sets[idx].extend(p for p in labels[prev:curr])
-            prev = curr
-
-    return sets
 
 
 def main():

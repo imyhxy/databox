@@ -1,8 +1,7 @@
 # Author: imyhxy
 # File: imagedir_to_cvat.py
 # Date: 8/9/24
-"""
-Convert dataset from Imagedir to CVAT format.
+"""Convert dataset from Imagedir to CVAT format.
 
 Origin format:
     root/

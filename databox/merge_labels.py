@@ -1,10 +1,7 @@
 # Author: imyhxy
 # File: merge_labels.py
 # Date: 11/25/23
-"""
-Recursively search for subdirectories "train.txt", "test.txt" and "val.txt"
-files and merge them according to the name.
-"""
+"""Recursively search for subdirectories "train.txt", "test.txt" and "val.txt" files and merge them according to the name."""
 import argparse
 import os.path as osp
 from glob import glob
@@ -36,7 +33,7 @@ def main():
                         labels = [osp.join(dir_name, x) for x in d.readlines()]
                     f.writelines(labels)
 
-    cls_stat = dict()
+    cls_stat = {}
     with open(osp.join(args.root, "train.txt")) as f:
         for p in f:
             key = p.split()[1]

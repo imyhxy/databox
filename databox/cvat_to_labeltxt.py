@@ -1,9 +1,7 @@
 # Author: fkwong
 # File: cvat_to_labeltxt.py
 # Date: 8/9/24
-"""
-Convert annotation.xml into labeltxt format.
-"""
+"""Convert annotation.xml into labeltxt format."""
 import argparse
 import os.path as osp
 import xml.etree.ElementTree as ET

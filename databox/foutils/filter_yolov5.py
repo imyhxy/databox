@@ -80,7 +80,7 @@ def filter_yolov5(input_dir: str, output_dir: str):
     os.makedirs(dst_images, exist_ok=True)
     assert os.path.isdir(src_images), "Source directory does not exists."
 
-    for root, dirs, files in os.walk(src_images, followlinks=True):
+    for root, _, files in os.walk(src_images, followlinks=True):
         dst_root = os.path.join(dst_images, os.path.relpath(root, src_images))
         os.makedirs(dst_root, exist_ok=True)
 
