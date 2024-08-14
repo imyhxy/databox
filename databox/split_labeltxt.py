@@ -16,7 +16,6 @@ def parse_args():
     exclusive_group.add_argument("--seed", type=int, help="random seed")
 
     parser.add_argument("--train", type=float, default=0.8, help="train split ratio")
-    parser.add_argument("--val", type=float, default=0.2, help="validation split ratio")
 
     parser.add_argument(
         "--label-txt",
