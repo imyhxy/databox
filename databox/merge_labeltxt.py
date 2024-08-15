@@ -1,10 +1,9 @@
-# Author: imyhxy
-# File: merge_labels.py
-# Date: 11/25/23
-"""Recursively search for subdirectories "train.txt", "test.txt" and "val.txt" files and merge them according to the name."""
+# Author: fkwong
+# File: merge_labeltxt.py
+# Date: 8/15/24
+"""Merge "train.txt", "test.txt" and "val.txt" files from inputs."""
 import argparse
 import os.path as osp
-from glob import glob
 from math import sqrt
 from pathlib import Path
 
@@ -12,10 +11,17 @@ from pathlib import Path
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--root",
+        "--inputs",
         type=str,
+        nargs="+",
         required=True,
         help="Root directory of list of homogeneous datasets",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        required=True,
+        help="Root directory of merged labels",
     )
 
     return parser.parse_args()
@@ -24,17 +30,24 @@ def parse_args():
 def main():
     args = parse_args()
     for split in {"train", "test", "val"}:
-        splits = glob(osp.join(args.root, "**", f"{split}.txt"))
+        splits = []
+        for inp in args.inputs:
+            p = Path(inp) / f"{split}.txt"
+            if p.is_file():
+                splits.append(p)
+
         if len(splits) != 0:
-            with open(osp.join(args.root, f"{split}.txt"), "w") as f:
+            with open(Path(args.output) / f"{split}.txt", "w") as f:
                 for file in splits:
-                    dir_name = Path(file).parent
-                    with open(file) as d:
-                        labels = [osp.join(dir_name, x) for x in d.readlines()]
-                    f.writelines(labels)
+                    with open(file) as q:
+                        for line in q:
+                            p, n = line.strip().split()
+                            p = osp.join(osp.dirname(file), p)
+                            p = osp.relpath(p, args.output)
+                            f.write(f"./{p.lstrip('./')} {n}\n")
 
     cls_stat = {}
-    with open(osp.join(args.root, "train.txt")) as f:
+    with open(Path(args.output) / "train.txt") as f:
         for p in f:
             key = p.split()[1]
             cls_stat[key] = cls_stat.get(key, 0) + 1
