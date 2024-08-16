@@ -21,9 +21,27 @@ root/
 """
 import argparse
 import os
+import os.path as osp
+from glob import glob
+from itertools import chain
 from pathlib import Path
 
-from databox.utils.search_images import search_images
+
+def search_images(root: str):
+
+    exts = {".jpg", ".png", ".jpeg"}
+    return sorted(
+        [
+            x
+            for x in chain(
+                *[
+                    glob(osp.join(root, "**", f"*{x}"), recursive=True)
+                    for x in chain(*[(e.lower(), e.upper()) for e in exts])
+                ]
+            )
+            if "outputs" not in x
+        ]
+    )
 
 
 def parse_args():
