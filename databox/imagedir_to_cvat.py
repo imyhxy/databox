@@ -32,6 +32,7 @@ def parse_args():
     parser.add_argument(
         "--categories",
         type=str,
+        required=True,
         nargs="+",
         help="List of ordered categories",
     )
@@ -58,7 +59,6 @@ def main():
     ds.export(
         export_dir=args.output,
         dataset_type=fot.CVATImageDataset,
-        label_path="annotations.xml",
     )
 
 
