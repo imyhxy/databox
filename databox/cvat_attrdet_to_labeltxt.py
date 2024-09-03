@@ -43,7 +43,13 @@ def main():
     parser.add_argument(
         "--output-dir", type=str, required=True, help="path to the labeltxt dataset"
     )
-
+    parser.add_argument(
+        "--classes",
+        type=str,
+        nargs="+",
+        required=True,
+        help="only consider specified classes",
+    )
     parser.add_argument(
         "--attr-index",
         type=str,
@@ -54,7 +60,7 @@ def main():
     parser.add_argument(
         "--alpha",
         type=float,
-        default=1,
+        default=0,
         help="an optional expansion/contraction to apply to the patch before extracting it, \
                         in [-1, inf). If provided, the length and width of the box are expanded \
                         (or contracted, when alpha < 0) by (100 * alpha)%. For example, set alpha = 0.1 to expand the \
@@ -65,15 +71,14 @@ def main():
 
     if args.yaml:
         params = yaml.safe_load(open("params.yaml"))["cvat_attrdet_to_labeltxt"]
-        seed = params["seed"]
-        train = params["train"]
-        alpha = params["alpha"]
-        attr_index = params["attr_index"]
     else:
-        seed = args.seed
-        train = args.train
-        alpha = args.alpha
-        attr_index = args.attr_index
+        params = args
+
+    seed = getattr(params, "seed")  # noqa: B009
+    train = getattr(params, "train")  # noqa: B009
+    alpha = getattr(params, "alpha")  # noqa: B009
+    attr_index = getattr(params, "attr_index")  # noqa: B009
+    classes = getattr(params, "classes")  # noqa: B009
 
     ais = OrderedDict()
     for ai in attr_index:
@@ -100,6 +105,8 @@ def main():
 
         im = cv2.imread(sam.filepath)
         for box in sam.detections.detections:
+            if box.label not in classes:
+                continue
             for k, v in ais.items():
                 if box[k]:
                     patch = fup.extract_patch(im, detection=box, alpha=alpha)
