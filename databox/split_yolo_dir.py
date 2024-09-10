@@ -3,7 +3,7 @@
 # Date: 8/14/24
 """Split YOLO dataset into train and val set."""
 import argparse
-import os.path
+import os.path as osp
 import random
 from pathlib import Path
 
@@ -41,8 +41,8 @@ def main():
     for inp in args.inputs:
         random.seed(seed)
         inp_dir = Path(inp)
-        jpegs = (inp_dir / "images").glob("*.jpg")
-        jpegs = [os.path.relpath(str(j), str(inp_dir)) for j in jpegs]
+        jpegs = sorted((inp_dir / "images").glob("*.jpg"))
+        jpegs = [osp.relpath(str(j), str(inp_dir)) for j in jpegs]
         jpegs = [f"./{j}" if not j.startswith("./") else j for j in jpegs]
         random.shuffle(jpegs)
         train_num = int(train * len(jpegs))
