@@ -3,7 +3,7 @@
 # Date: 8/20/24
 """Convert a fiftyone classification dataset to a labeltxt file."""
 import argparse
-import os.path
+import os.path as osp
 from pathlib import Path
 
 import fiftyone as fo
@@ -15,10 +15,17 @@ from sklearn.model_selection import train_test_split
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--input-dir",
+        "--inputs",
+        nargs="+",
         type=str,
         required=True,
         help="path to the fiftyone classification format dataset",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=str,
+        required=True,
+        help="path to the output directory",
     )
 
     exclusive_group = parser.add_mutually_exclusive_group(required=True)
@@ -53,15 +60,19 @@ def main():
 
     assert set(categories) == set(mappings.values())
 
-    ds = fo.Dataset.from_dir(
-        dataset_dir=args.input_dir,
-        dataset_type=fot.FiftyOneImageClassificationDataset,
-    )
+    ds = fo.Dataset()
+    for inp in args.inputs:
+        inp_dir = Path(inp)
+        if (inp_dir / "labels.json").exists():
+            ds.merge_dir(
+                dataset_dir=inp,
+                dataset_type=fot.FiftyOneImageClassificationDataset,
+            )
 
     x = []
     y = []
     for sam in ds:
-        fp = os.path.relpath(sam.filepath, args.input_dir)
+        fp = osp.relpath(sam.filepath, args.output_dir)
         x.append(fp)
         name = sam.ground_truth.label
         new_name = mappings[name]
