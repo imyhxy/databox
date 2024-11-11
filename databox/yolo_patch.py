@@ -1,7 +1,6 @@
 # Author: imyhxy
 # File: yolo_patch.py
 # Date: 6/6/24
-
 import argparse
 from pathlib import Path
 
@@ -19,7 +18,10 @@ def parse_args():
         "--output-dir", type=str, required=True, help="Path to patch output directory"
     )
     parser.add_argument(
-        "--classes", type=int, nargs="+", help="Classes to be saved as patch"
+        "--class-indexes",
+        type=str,
+        nargs="+",
+        help="save multiply index into a directory, i.e.: cat:1,4,5 dog:0,2,3",
     )
     parser.add_argument(
         "--expand",
@@ -45,13 +47,17 @@ def main():
     out_dir.mkdir(exist_ok=True, parents=True)
     total = 0
     jpgs = list(img_dir.glob("**/*.jpg"))
+
+    idx2cat = {}
+    for ai in args.class_indexes:
+        cat, idxs = ai.split(":")
+        idx2cat.update({int(i): cat for i in idxs.split(",")})
+
     for img in tqdm(jpgs, total=len(jpgs)):
         lab = Path(str(img.with_suffix(".txt")).replace("/images/", "/labels/"))
         if not lab.exists():
             continue
         boxes = np.loadtxt(lab, delimiter=" ", dtype=np.float64, ndmin=2)
-        if args.classes is not None:
-            boxes = boxes[np.isin(boxes[:, 0], args.classes)]
 
         if len(boxes) > 0:
             im = cv2.imread(str(img))
@@ -78,8 +84,12 @@ def main():
                     break
             else:
                 for idx, box in enumerate(boxes):
+                    cat = idx2cat.get(int(box[0]))
+                    if cat is None:
+                        continue  # not required categories
                     patch = im[int(box[2]) : int(box[4]), int(box[1]) : int(box[3])]
-                    cv2.imwrite(str(out_dir / f"{lab.stem}_{idx:02d}.jpg"), patch)
+                    (out_dir / cat).mkdir(exist_ok=True)
+                    cv2.imwrite(str(out_dir / cat / f"{lab.stem}_{idx:02d}.jpg"), patch)
                     total += 1
 
     print(f"Total patches: {total}")
