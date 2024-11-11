@@ -43,42 +43,37 @@ def main():
     parser.add_argument(
         "--output-dir", type=str, required=True, help="path to the labeltxt dataset"
     )
-    parser.add_argument(
-        "--classes",
-        type=str,
-        nargs="+",
-        required=True,
-        help="only consider specified classes",
-    )
+
     parser.add_argument(
         "--attr-index",
         type=str,
         nargs="+",
-        help="attribute-index mappings, order matter",
+        help="attribute-index mappings, order does matter",
     )
     parser.add_argument("--train", type=float, default=0.8, help="train split ratio")
     parser.add_argument(
         "--alpha",
         type=float,
-        default=0,
+        default=1,
         help="an optional expansion/contraction to apply to the patch before extracting it, \
                         in [-1, inf). If provided, the length and width of the box are expanded \
-                        (or contracted, when alpha < 0) by (100 * alpha)%. For example, set alpha = 0.1 to expand the \
-                        box by 10%, and set alpha = -0.1 to contract the box by 10%",
+                        (or contracted, when alpha < 0) by (100 * alpha)%. For example, set alpha = 1.1 to expand the \
+                        box by 10%, and set alpha = 0.9 to contract the box by 10%",
     )
 
     args = parser.parse_args()
 
     if args.yaml:
         params = yaml.safe_load(open("params.yaml"))["cvat_attrdet_to_labeltxt"]
+        seed = params["seed"]
+        train = params["train"]
+        alpha = params["alpha"]
+        attr_index = params["attr_index"]
     else:
-        params = args
-
-    seed = getattr(params, "seed")  # noqa: B009
-    train = getattr(params, "train")  # noqa: B009
-    alpha = getattr(params, "alpha")  # noqa: B009
-    attr_index = getattr(params, "attr_index")  # noqa: B009
-    classes = getattr(params, "classes")  # noqa: B009
+        seed = args.seed
+        train = args.train
+        alpha = args.alpha
+        attr_index = args.attr_index
 
     ais = OrderedDict()
     for ai in attr_index:
@@ -90,6 +85,8 @@ def main():
         dataset_type=fot.CVATImageDataset,
         labels_path="annotations.xml",
         data_path="images",
+        shuffle=False,
+        seed=seed,
     )
 
     out_dir = Path(args.output_dir)
@@ -99,18 +96,18 @@ def main():
 
     x = []
     y = []
-    for sam in ds.iter_samples(progress=True):
+    cnt = 0
+    for sam in ds.sort_by("filepath").iter_samples(progress=True):
         if sam.detections is None:
             continue
 
         im = cv2.imread(sam.filepath)
         for box in sam.detections.detections:
-            if box.label not in classes:
-                continue
             for k, v in ais.items():
                 if box[k]:
                     patch = fup.extract_patch(im, detection=box, alpha=alpha)
-                    save_path = str(out_image_dir / f"{box['id']}.jpg")
+                    save_path = str(out_image_dir / f"{cnt:06d}.jpg")
+                    cnt += 1
                     cv2.imwrite(save_path, patch)
                     x.append(osp.relpath(save_path, args.output_dir))
                     y.append(v)
