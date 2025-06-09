@@ -44,7 +44,7 @@ def main():
                             p, n = line.strip().split()
                             p = osp.join(osp.dirname(file), p)
                             p = osp.relpath(p, args.output)
-                            f.write(f"./{p.lstrip('./')} {n}\n")
+                            f.write(f"./{p.lstrip('./') if p.startswith('./') else p} {n}\n")
 
     cls_stat = {}
     with open(Path(args.output) / "train.txt") as f:
