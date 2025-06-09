@@ -6,6 +6,7 @@ import argparse
 
 import fiftyone as fo
 import fiftyone.types as fot
+from fiftyone import ViewField as F
 
 
 def parse_args():
@@ -13,6 +14,9 @@ def parse_args():
     parser.add_argument("--cvat-dir", type=str, required=True, help="CVAT directory")
     parser.add_argument(
         "--output-dir", type=str, required=True, help="Output directory"
+    )
+    parser.add_argument(
+        "--classes", default=None, nargs="+", type=str, help="List of classes"
     )
     return parser.parse_args()
 
@@ -24,6 +28,7 @@ def main():
         dataset_dir=args.cvat_dir,
         dataset_type=fot.CVATImageDataset,
         data_path="images",
+        # data_path=args.cvat_dir,
         labels_path="annotations.xml",
         progress=True,
     )
@@ -31,6 +36,9 @@ def main():
     for sample in ds.iter_samples(autosave=True):
         if sample["classifications"] is not None:
             sample["classification"] = sample["classifications"]["classifications"][0]
+
+    if args.classes is not None:
+        ds = ds.filter_labels("classification.label", F("label").is_in(args.classes))
 
     ds.export(
         export_dir=args.output_dir,
