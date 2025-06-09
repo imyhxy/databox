@@ -1,25 +1,35 @@
 # Author: fkwong
 # File: imgdir_to_labeltxt.py
 # Date: 12/14/23
-"""Convert directory dataset into a openmm style dataset.
+"""
+Generates label text files (train.txt, val.txt) for image classification tasks
+from a directory of images organized by class.
 
-YOLOv5-style dataset:
+This script scans a directory where each subdirectory represents a class and
+contains images. It creates train/val splits and outputs text files listing
+image paths (relative to the output directory) and their corresponding class
+indices, suitable for use with OpenMMLab and similar frameworks.
 
-root/
-    train/
-        cls1/
-        cls2/
-    val/
-        cls1/
-        cls2/
+Supports configuration via command-line arguments or a YAML file for:
+- Input/output directories
+- List of class categories (ordered)
+- Train/validation split ratio
+- Random seed
 
-openmm-style dataset:
+Example directory structure:
+    dataset/
+        class1/
+            img1.jpg
+            img2.jpg
+        class2/
+            img3.jpg
+            ...
 
-root/
-    dir1/
-    dir2/
-    train.txt
-    val.txt
+Outputs:
+    output_dir/
+        train.txt
+        val.txt
+Each line in the output files: <relative_image_path> <class_index>
 """
 import argparse
 import os.path as osp
