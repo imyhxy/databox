@@ -107,9 +107,16 @@ def main():
         x.extend(f"{i} {idx}" for i in images)
         y.extend([idx] * len(images))
 
+    count_values = {k: y.count(k) for k in set(y)}
+    unique_values = [k for k, v in count_values.items() if v == 1]
+    dup_values = [k for k, v in count_values.items() if v > 1]
+    for n, i in enumerate(y):
+        if i in unique_values:
+            y[n] = unique_values[0] if len(unique_values) > 1 else dup_values[0]
+
     x = [osp.relpath(i, args.output) for i in x]
-    x_train, x_val, y_train, y_val = train_test_split(
-        x, y, train_size=train, random_state=seed, shuffle=True, stratify=y
+    x_train, x_val = train_test_split(
+        x, train_size=train, random_state=seed, shuffle=True, stratify=y
     )
 
     out_dir.mkdir(parents=True, exist_ok=True)
