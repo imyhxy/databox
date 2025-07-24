@@ -6,7 +6,10 @@ max-line-length = 88
 # D100-D107: Missing docstrings.
 # D200: One-line docstring should fit on one line with quotes.
 # E501: line too long.
-extend-ignore = E203,E402,D100,D101,D102,D103,D104,D105,D106,D107,D200,E501
+# D205: 1 blank line required between summary line and description.
+# D212: Multi-line docstring summary should start at the first line.
+# D415: First line should end with a period, question mark, or exclamation point.
+extend-ignore = E203,E402,D100,D101,D102,D103,D104,D105,D106,D107,D200,E501,D205,D212,D415
 # Ignore missing docstrings within unit testing functions.
 per-file-ignores =
     **/tests/:D100,D101,D102,D103,D104,D105,D106,D107
