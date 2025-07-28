@@ -7,21 +7,24 @@ from pathlib import Path
 
 import fiftyone as fo
 import fiftyone.types as fot
+import yaml
 from sklearn.model_selection import train_test_split
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
+
     parser.add_argument(
         "--fiftyone-dataset",
         type=str,
         required=True,
         help="Path to the FiftyOne dataset directory",
     )
+
+    exclusive_group = parser.add_mutually_exclusive_group()
+    exclusive_group.add_argument("--yaml", type=str, help="use params.yaml")
+    exclusive_group.add_argument("--seed", default=None, type=int, help="random seed")
     parser.add_argument("--train", type=float, default=0.8, help="Train split ratio")
-    parser.add_argument(
-        "--seed", type=int, default=42, help="Random seed for splitting"
-    )
     parser.add_argument(
         "--categories",
         type=str,
@@ -40,16 +43,23 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Load the FiftyOne dataset
     dataset = fo.Dataset.from_dir(
         dataset_dir=args.fiftyone_dataset,
         dataset_type=fot.FiftyOneImageClassificationDataset,
     )
 
+    if args.yaml is not None:
+        params = yaml.safe_load(open("params.yaml"))[args.yaml]
+        seed = params["seed"]
+        train = params["train"]
+        categories = params["categories"]
+    else:
+        seed = args.seed
+        train = args.train
+        categories = args.categories
+
     out_dir = Path(args.output_dir)
     out_dir.mkdir(exist_ok=True, parents=True)
-
-    categories = args.categories
 
     x, y = [], []
     for sample in dataset.iter_samples():
@@ -64,9 +74,6 @@ def main():
     for n, i in enumerate(y):
         if i in unique_values:
             y[n] = unique_values[0] if len(unique_values) > 1 else dup_values[0]
-
-    train = args.train
-    seed = args.seed
 
     x_train, x_val = train_test_split(
         x, train_size=train, random_state=seed, shuffle=True, stratify=y
