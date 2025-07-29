@@ -1,5 +1,5 @@
-# Author: imyhxy
-# File: split_fiftyone.py
+# Author: fkwong
+# File: split_fiftyone_into_labeltxt.py
 # Date: 7/28/25
 import argparse
 import os
@@ -61,12 +61,18 @@ def main():
     out_dir = Path(args.output_dir)
     out_dir.mkdir(exist_ok=True, parents=True)
 
-    x, y = [], []
+    paths, x, y = [], [], []
     for sample in dataset.iter_samples():
         cat_idx = categories.index(sample["ground_truth"].label)
         relative_path = os.path.relpath(sample.filepath, out_dir)
+        paths.append(relative_path)
         x.append(f"{relative_path} {cat_idx}")
         y.append(f"{sample.tags[0] if sample.tags else ''}-{cat_idx}")
+
+    # sort by paths to ensure consistent order
+    sorted_indices = sorted(range(len(paths)), key=lambda i: paths[i])
+    x = [x[i] for i in sorted_indices]
+    y = [y[i] for i in sorted_indices]
 
     count_values = {k: y.count(k) for k in set(y)}
     unique_values = [k for k, v in count_values.items() if v == 1]
