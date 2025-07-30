@@ -30,7 +30,7 @@ def main():
     # Load the FiftyOne dataset from the specified directory
     dataset = fo.Dataset.from_dir(
         dataset_dir=args.fiftyone_dataset,
-        dataset_type=fot.FiftyoneDataset,
+        dataset_type=fot.FiftyOneDataset,
         name=args.name,
     )
 
