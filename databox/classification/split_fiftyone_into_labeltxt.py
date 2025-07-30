@@ -45,7 +45,7 @@ def main():
 
     dataset = fo.Dataset.from_dir(
         dataset_dir=args.fiftyone_dataset,
-        dataset_type=fot.FiftyOneImageClassificationDataset,
+        dataset_type=fot.FiftyOneDataset,
     )
 
     if args.yaml is not None:

@@ -45,7 +45,7 @@ def main():
 
     dataset.export(
         export_dir=args.output,
-        dataset_type=fot.FiftyOneImageClassificationDataset,
+        dataset_type=fot.FiftyOneDataset,
     )
 
 

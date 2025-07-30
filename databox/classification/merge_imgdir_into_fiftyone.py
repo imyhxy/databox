@@ -36,7 +36,7 @@ def main():
 
     main_dataset = fo.Dataset.from_dir(
         dataset_dir=args.fiftyone_dataset,
-        dataset_type=fot.FiftyOneImageClassificationDataset,
+        dataset_type=fot.FiftyOneDataset,
     )
 
     for imgdir, tag in zip(args.image_directories, args.tags):
@@ -49,15 +49,15 @@ def main():
         main_dataset.add_samples(dataset)
 
     duplicates_map = fob.compute_exact_duplicates(main_dataset)
-    duplicates = list(chain(duplicates_map.values()))
+    duplicates = list(chain(*duplicates_map.values()))
     if duplicates:
         print(f"Found {len(duplicates)} duplicate samples, removing them.")
-        main_dataset.remove_samples(duplicates)
+        main_dataset.delete_samples(duplicates)
 
     if args.output:
         main_dataset.export(
             export_dir=args.output,
-            dataset_type=fot.FiftyOneImageClassificationDataset,
+            dataset_type=fot.FiftyOneDataset,
         )
 
 
