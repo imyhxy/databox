@@ -130,7 +130,7 @@ repos:
     hooks:
       - id: codespell
         args:
-          - --ignore-words-list=crate,nd,strack,dota,ser,te,inh,fo,fot
+          - --ignore-words-list=crate,nd,strack,dota,ser,te,inh,fo,fot,fom
 
   - repo: https://github.com/Lucas-C/pre-commit-hooks
     rev: v1.5.5
