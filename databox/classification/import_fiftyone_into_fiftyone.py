@@ -27,20 +27,23 @@ def parse_args():
 def main():
     args = parse_args()
 
-    # Load the FiftyOne dataset from the specified directory
-    dataset = fo.Dataset.from_dir(
-        dataset_dir=args.fiftyone_dataset,
-        dataset_type=fot.FiftyOneDataset,
-        name=args.name,
-    )
+    try:
+        # Load the FiftyOne dataset from the specified directory
+        dataset = fo.Dataset.from_dir(
+            dataset_dir=args.fiftyone_dataset,
+            dataset_type=fot.FiftyOneDataset,
+            name=args.name,
+        )
+    except ValueError:
+        fo.delete_dataset(args.name)
+    else:
+        # Set the dataset to persistent mode
+        dataset.persistent = True
 
-    # Set the dataset to persistent mode
-    dataset.persistent = True
+        # Save the dataset
+        dataset.save()
 
-    # Save the dataset
-    dataset.save()
-
-    print(f"FiftyOne dataset '{args.name}' imported successfully.")
+        print(f"FiftyOne dataset '{args.name}' imported successfully.")
 
 
 if __name__ == "__main__":
