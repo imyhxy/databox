@@ -1,5 +1,5 @@
 # Author: fkwong
-# File: import_fiftyone.py
+# File: import_fiftyone_into_fiftyone.py
 # Date: 7/29/25
 from argparse import ArgumentParser
 

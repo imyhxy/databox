@@ -17,7 +17,6 @@ def parse_args():
         help="Path to the input image directory",
     )
     parser.add_argument("--tag", type=str, help="Tag for the dataset")
-    parser.add_argument("--name", type=str, required=True, help="Name of the dataset")
     parser.add_argument("--output", type=str, help="Fiftyone dataset output directory")
     return parser.parse_args()
 
@@ -32,7 +31,6 @@ def main():
 
     # Load the dataset from the input directory
     dataset = fo.Dataset.from_dir(
-        name=args.name,
         dataset_dir=args.input,
         dataset_type=fot.ImageClassificationDirectoryTree,
         label_field="ground_truth",
