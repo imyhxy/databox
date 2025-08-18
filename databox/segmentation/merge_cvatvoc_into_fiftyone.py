@@ -11,7 +11,10 @@ import fiftyone.types as fot
 def parse_args():
     parser = ArgumentParser()
     parser.add_argument(
-        "--fiftyone-dir", type=str, default=None, help="Path to origin directory"
+        "--fiftyone-dir",
+        type=str,
+        default=None,
+        help="Path to fifytone dataset directory",
     )
     parser.add_argument(
         "--cvat-dirs",
@@ -39,9 +42,9 @@ def main():
     if osp.exists(args.output):
         raise ValueError(f"Output directory '{args.output}' already exists")
 
-    if args.origin_dir is not None:
+    if args.fiftyone_dir is not None:
         ds = fo.Dataset.from_dir(
-            dataset_dir=args.origin_dir,
+            dataset_dir=args.fiftyone_dir,
             dataset_type=fot.FiftyOneDataset,
         )
     else:
