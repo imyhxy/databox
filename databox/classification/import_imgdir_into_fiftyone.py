@@ -11,27 +11,29 @@ import fiftyone.types as fot
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--input",
+        "--input-dir",
         type=str,
         required=True,
         help="Path to the input image directory",
     )
     parser.add_argument("--tag", type=str, help="Tag for the dataset")
-    parser.add_argument("--output", type=str, help="Fiftyone dataset output directory")
+    parser.add_argument(
+        "--output-dir", type=str, help="Fiftyone dataset output directory"
+    )
     return parser.parse_args()
 
 
 def main():
     args = parse_args()
 
-    if not os.path.exists(args.input):
+    if not os.path.exists(args.input_dir):
         raise ValueError(
-            f"Input directory '{args.input}' does not exist. Please provide a valid path."
+            f"Input directory '{args.input_dir}' does not exist. Please provide a valid path."
         )
 
     # Load the dataset from the input directory
     dataset = fo.Dataset.from_dir(
-        dataset_dir=args.input,
+        dataset_dir=args.input_dir,
         dataset_type=fot.ImageClassificationDirectoryTree,
         label_field="ground_truth",
         tags=args.tag,
@@ -42,7 +44,7 @@ def main():
     dataset.save()
 
     dataset.export(
-        export_dir=args.output,
+        export_dir=args.output_dir,
         dataset_type=fot.FiftyOneDataset,
     )
 
