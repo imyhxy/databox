@@ -1,6 +1,6 @@
 from unittest import TestCase
 
-from databox.coco_to_cvat import migrate_coco_annotations
+from databox.cvat.fill_cvat_coco_seg_with_std_coco_seg import migrate_coco_annotations
 
 
 class TestCocoToCvat(TestCase):
