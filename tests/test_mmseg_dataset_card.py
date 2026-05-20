@@ -1,0 +1,116 @@
+import math
+import xml.etree.ElementTree as ET
+
+import pytest
+import yaml
+from PIL import Image
+
+from databox.segmentation.mmseg_dataset_card import (
+    analyze_dataset,
+    compute_ocnet_weights,
+    parse_labelmap,
+    write_dataset_card,
+)
+
+
+def _write_labelmap(path):
+    path.write_text(
+        """# label:color_rgb:parts:actions
+background:0,0,0::
+object:255,0,0::
+empty:0,255,0::
+"""
+    )
+
+
+def _save_mask(path, values):
+    image = Image.new("P", (len(values[0]), len(values)))
+    image.putdata([value for row in values for value in row])
+    palette = [0] * 768
+    palette[:9] = [0, 0, 0, 255, 0, 0, 0, 255, 0]
+    palette[255 * 3 : 255 * 3 + 3] = [128, 128, 128]
+    image.putpalette(palette)
+    image.save(path)
+
+
+def _make_dataset(tmp_path):
+    root = tmp_path / "dataset"
+    (root / "images").mkdir(parents=True)
+    (root / "annotations").mkdir()
+    _write_labelmap(root / "labelmap.txt")
+    Image.new("RGB", (2, 2)).save(root / "images" / "one.jpg")
+    Image.new("RGB", (2, 2)).save(root / "images" / "two.jpg")
+    _save_mask(root / "annotations" / "one.png", [[0, 1], [1, 255]])
+    _save_mask(root / "annotations" / "two.png", [[0, 0], [1, 7]])
+    (root / "train.txt").write_text("one\n")
+    (root / "val.txt").write_text("two\nmissing\n")
+    return root
+
+
+def test_parse_labelmap_reads_ordered_classes(tmp_path):
+    labelmap = tmp_path / "labelmap.txt"
+    _write_labelmap(labelmap)
+
+    classes = parse_labelmap(labelmap)
+
+    assert [item.name for item in classes] == ["background", "object", "empty"]
+    assert classes[1].id == 1
+    assert classes[1].color_rgb == (255, 0, 0)
+
+
+def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
+    root = _make_dataset(tmp_path)
+
+    data = analyze_dataset(root)
+
+    rows = {row["name"]: row for row in data["classes"]}
+    assert rows["background"]["pixel_count"] == 3
+    assert rows["background"]["image_count"] == 2
+    assert rows["object"]["pixel_count"] == 3
+    assert rows["object"]["image_count"] == 2
+    assert rows["empty"]["pixel_count"] == 0
+    assert rows["empty"]["class_weight_ocnet"] is None
+    assert data["class_weights_ocnet"] == [
+        round(row["class_weight_ocnet"], 4)
+        if row["class_weight_ocnet"] is not None
+        else 0.0
+        for row in data["classes"]
+    ]
+    assert data["ignore_index"]["pixel_count"] == 1
+    assert data["ignore_index"]["image_count"] == 1
+    assert data["total_pixels"] == 8
+    assert data["splits"] == {"train": 1, "val": 2}
+    assert any("Unknown mask values" in item for item in data["validation_warnings"])
+    assert any("val.txt contains 1 stems" in item for item in data["validation_warnings"])
+    assert any("Classes with zero pixels: empty" == item for item in data["validation_warnings"])
+
+
+def test_compute_ocnet_weights_match_formula_and_skip_zero_counts():
+    counts = {0: 100, 1: 10, 2: 0}
+
+    weights = compute_ocnet_weights(counts)
+
+    raw0 = 1 / math.log1p(100)
+    raw1 = 1 / math.log1p(10)
+    assert weights[0] == pytest.approx(3 * raw0 / (raw0 + raw1))
+    assert weights[1] == pytest.approx(3 * raw1 / (raw0 + raw1))
+    assert weights[2] is None
+
+
+def test_write_dataset_card_creates_yaml_and_svg(tmp_path):
+    root = _make_dataset(tmp_path)
+
+    card = write_dataset_card(root)
+
+    assert card.yaml_path.exists()
+    assert card.svg_path.exists()
+    assert not (root / "dataset_card.png").exists()
+    assert card.svg_path.stat().st_size > 0
+    assert "<svg" in card.svg_path.read_text()
+    ET.parse(card.svg_path)
+    data = yaml.safe_load(card.yaml_path.read_text())
+    assert data["image_count"] == 2
+    assert data["mask_count"] == 2
+    assert "class_weights_ocnet: [1.5000, 1.5000, 0.0000]" in (
+        card.yaml_path.read_text()
+    )
