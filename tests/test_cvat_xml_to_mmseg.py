@@ -5,6 +5,7 @@ from xml.etree import ElementTree as ET
 import cv2
 import numpy as np
 import pytest
+from PIL import Image
 
 from databox.segmentation.cvat_xml_to_mmseg import (
     Config,
@@ -24,8 +25,10 @@ def _config(**kwargs):
         categories=["background", "object"],
         ignore_categories=[],
         ignore_index=255,
+        ignore_palette=(128, 128, 128),
         polyline_width=5,
         strict_categories=False,
+        palette=[(0, 0, 0), (255, 255, 255)],
     )
     config.update(kwargs)
     return Config(**config)
@@ -46,6 +49,10 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
   categories:
     - background
     - object
+  palette:
+    - [0, 0, 0]
+    - [255, 255, 255]
+  ignore_palette: [128, 128, 128]
 """
     )
 
@@ -56,12 +63,77 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
             param_name="cvat_xml_to_mmseg",
             input="cli_annotations.xml",
             output="cli_out",
+            palette=None,
         )
     )
 
     assert config.annotations == Path("cli_annotations.xml")
     assert config.output == Path("cli_out")
     assert config.seed == 7
+    assert config.palette == [(0, 0, 0), (255, 255, 255)]
+    assert config.ignore_palette == (128, 128, 128)
+
+
+def test_cli_mode_requires_palette():
+    with pytest.raises(ValueError, match="--palette"):
+        config_from_args(
+            SimpleNamespace(
+                yaml=False,
+                input="annotations.xml",
+                output="out",
+                seed=0,
+                train=0.8,
+                categories=["background", "object"],
+                palette=None,
+                ignore_categories=[],
+                ignore_index=255,
+                ignore_palette="128,128,128",
+                polyline_width=5,
+                strict_categories=False,
+            )
+        )
+
+
+def test_cli_mode_requires_ignore_palette():
+    with pytest.raises(ValueError, match="--ignore-palette"):
+        config_from_args(
+            SimpleNamespace(
+                yaml=False,
+                input="annotations.xml",
+                output="out",
+                seed=0,
+                train=0.8,
+                categories=["background", "object"],
+                palette=["0,0,0", "255,255,255"],
+                ignore_categories=[],
+                ignore_index=255,
+                ignore_palette=None,
+                polyline_width=5,
+                strict_categories=False,
+            )
+        )
+
+
+def test_cli_mode_parses_palette():
+    config = config_from_args(
+        SimpleNamespace(
+            yaml=False,
+            input="annotations.xml",
+            output="out",
+            seed=0,
+            train=0.8,
+            categories=["background", "object"],
+            palette=["0,0,0", "255,255,255"],
+            ignore_categories=[],
+            ignore_index=255,
+            ignore_palette="128,128,128",
+            polyline_width=5,
+            strict_categories=False,
+        )
+    )
+
+    assert config.palette == [(0, 0, 0), (255, 255, 255)]
+    assert config.ignore_palette == (128, 128, 128)
 
 
 def test_polygon_fill_uses_category_index():
@@ -173,6 +245,11 @@ def test_convert_writes_mmseg_layout(tmp_path):
         (out / "val.txt").read_text().splitlines()
     ) == {"one", "two"}
     assert not (out / "test.txt").exists()
+    with Image.open(masks[0]) as mask:
+        assert mask.mode == "P"
+        palette = mask.getpalette()
+        assert palette[:6] == [0, 0, 0, 255, 255, 255]
+        assert palette[255 * 3 : 255 * 3 + 3] == [128, 128, 128]
 
 
 def test_strict_categories_allows_background_not_in_cvat(tmp_path):

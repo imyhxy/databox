@@ -11,6 +11,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from PIL import Image
 import yaml
 
 
@@ -27,8 +28,10 @@ class Config:
     categories: list[str]
     ignore_categories: list[str]
     ignore_index: int
+    ignore_palette: tuple[int, int, int]
     polyline_width: int
     strict_categories: bool
+    palette: list[tuple[int, int, int]]
 
 
 def parse_args():
@@ -62,6 +65,13 @@ def parse_args():
         help="List of ordered categories",
     )
     parser.add_argument(
+        "--palette",
+        type=str,
+        default=None,
+        nargs="+",
+        help="Ordered RGB palette entries, one per category, as R,G,B values",
+    )
+    parser.add_argument(
         "--ignore-categories",
         type=str,
         default=[],
@@ -70,6 +80,12 @@ def parse_args():
     )
     parser.add_argument(
         "--ignore-index", type=int, default=255, help="Pixel value for ignore labels"
+    )
+    parser.add_argument(
+        "--ignore-palette",
+        type=str,
+        default=None,
+        help="RGB palette entry for ignore_index, as R,G,B values",
     )
     parser.add_argument(
         "--polyline-width",
@@ -96,8 +112,10 @@ def config_from_args(args) -> Config:
         categories = params["categories"]
         ignore_categories = params.get("ignore_categories", [])
         ignore_index = params.get("ignore_index", 255)
+        ignore_palette = params.get("ignore_palette")
         polyline_width = params.get("polyline_width", 5)
         strict_categories = params.get("strict_categories", False)
+        palette = params.get("palette")
     else:
         missing = [
             name
@@ -105,6 +123,8 @@ def config_from_args(args) -> Config:
                 ("--input", args.input),
                 ("--output", args.output),
                 ("--categories", args.categories),
+                ("--palette", args.palette),
+                ("--ignore-palette", args.ignore_palette),
             )
             if value is None
         ]
@@ -117,8 +137,10 @@ def config_from_args(args) -> Config:
         categories = args.categories
         ignore_categories = args.ignore_categories
         ignore_index = args.ignore_index
+        ignore_palette = args.ignore_palette
         polyline_width = args.polyline_width
         strict_categories = args.strict_categories
+        palette = args.palette
 
     return Config(
         annotations=Path(annotations),
@@ -128,14 +150,55 @@ def config_from_args(args) -> Config:
         categories=list(categories),
         ignore_categories=list(ignore_categories),
         ignore_index=int(ignore_index),
+        ignore_palette=parse_palette_color(ignore_palette, name="ignore_palette"),
         polyline_width=int(polyline_width),
         strict_categories=bool(strict_categories),
+        palette=parse_palette(palette),
     )
+
+
+def parse_palette_color(color, name: str = "palette color") -> tuple[int, int, int]:
+    if color is None:
+        raise ValueError(f"{name} is required")
+    if isinstance(color, str):
+        channels = color.split(",")
+    else:
+        channels = color
+    if len(channels) != 3:
+        raise ValueError(f"Invalid palette color: {color}")
+    try:
+        rgb = tuple(int(channel) for channel in channels)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Invalid palette color: {color}") from exc
+    if any(channel < 0 or channel > 255 for channel in rgb):
+        raise ValueError(f"Palette color channels must be between 0 and 255: {color}")
+    return rgb
+
+
+def parse_palette(palette) -> list[tuple[int, int, int]]:
+    if palette is None:
+        raise ValueError("palette is required")
+    if not palette:
+        raise ValueError("palette must not be empty")
+
+    parsed = []
+    for color in palette:
+        parsed.append(parse_palette_color(color))
+
+    return parsed
 
 
 def validate_config(config: Config) -> None:
     if not config.categories:
         raise ValueError("categories must not be empty")
+    if not config.palette:
+        raise ValueError("palette is required")
+    if len(config.palette) < len(config.categories):
+        raise ValueError(
+            "palette must contain at least one RGB color for each category"
+        )
+    if len(config.palette) > 256:
+        raise ValueError("palette must contain no more than 256 colors")
     if not 0 < config.train < 1:
         raise ValueError(f"train ratio must be between 0 and 1, got {config.train}")
     if not 1 <= config.polyline_width <= 20:
@@ -293,6 +356,22 @@ def _write_split_files(output: Path, splits: dict[str, list[ET.Element]]) -> Non
         (output / f"{split}.txt").write_text(text)
 
 
+def save_palette_mask(
+    mask: np.ndarray,
+    path: Path,
+    palette: list[tuple[int, int, int]],
+    ignore_index: int,
+    ignore_palette: tuple[int, int, int],
+) -> None:
+    flat_palette = [channel for color in palette for channel in color]
+    flat_palette.extend([0] * (768 - len(flat_palette)))
+    start = ignore_index * 3
+    flat_palette[start : start + 3] = list(ignore_palette)
+    image = Image.fromarray(mask, mode="P")
+    image.putpalette(flat_palette)
+    image.save(path)
+
+
 def convert_cvat_xml_to_mmseg(config: Config) -> None:
     validate_config(config)
     tree = ET.parse(config.annotations)
@@ -340,8 +419,13 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 ignore_index=config.ignore_index,
                 polyline_width=config.polyline_width,
             )
-            if not cv2.imwrite(str(dst_mask), mask):
-                raise RuntimeError(f"Failed to write mask: {dst_mask}")
+            save_palette_mask(
+                mask,
+                dst_mask,
+                config.palette,
+                config.ignore_index,
+                config.ignore_palette,
+            )
 
 
 def main():
