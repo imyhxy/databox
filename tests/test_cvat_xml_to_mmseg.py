@@ -244,6 +244,11 @@ def test_convert_writes_mmseg_layout(tmp_path):
     assert set((out / "train.txt").read_text().splitlines()) | set(
         (out / "val.txt").read_text().splitlines()
     ) == {"one", "two"}
+    assert (out / "labelmap.txt").read_text().splitlines() == [
+        "# label:color_rgb:parts:actions",
+        "background:0,0,0::",
+        "object:255,255,255::",
+    ]
     assert not (out / "test.txt").exists()
     with Image.open(masks[0]) as mask:
         assert mask.mode == "P"

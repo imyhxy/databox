@@ -2,6 +2,7 @@
 # File: cvat_xml_to_mmseg.py
 # Date: 5/19/26
 """Convert CVAT annotations.xml into an MMSegmentation-style dataset."""
+
 import argparse
 import random
 import shutil
@@ -11,9 +12,8 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from PIL import Image
 import yaml
-
+from PIL import Image
 
 PARAM_NAME = "cvat_xml_to_mmseg"
 SHAPE_TAGS = {"polygon", "polyline", "box", "ellipse", "mask", "points", "skeleton"}
@@ -215,9 +215,7 @@ def validate_config(config: Config) -> None:
         raise ValueError("ignore_categories must not contain duplicates")
     overlap = set(config.categories) & set(config.ignore_categories)
     if overlap:
-        raise ValueError(
-            f"categories and ignore_categories overlap: {sorted(overlap)}"
-        )
+        raise ValueError(f"categories and ignore_categories overlap: {sorted(overlap)}")
     if len(config.categories) > 255:
         raise ValueError("categories must contain no more than 255 labels")
 
@@ -323,7 +321,7 @@ def clean_output(output: Path) -> None:
         path = output / dirname
         if path.exists():
             shutil.rmtree(path)
-    for filename in ("train.txt", "val.txt"):
+    for filename in ("train.txt", "val.txt", "labelmap.txt"):
         path = output / filename
         if path.exists():
             path.unlink()
@@ -342,7 +340,9 @@ def make_split(
     return shuffled[:train_num], shuffled[train_num:]
 
 
-def make_splits(images: list[ET.Element], config: Config) -> dict[str, list[ET.Element]]:
+def make_splits(
+    images: list[ET.Element], config: Config
+) -> dict[str, list[ET.Element]]:
     train_images, val_images = make_split(images, config.train, config.seed)
     return {"train": train_images, "val": val_images}
 
@@ -354,6 +354,18 @@ def _write_split_files(output: Path, splits: dict[str, list[ET.Element]]) -> Non
         if text:
             text += "\n"
         (output / f"{split}.txt").write_text(text)
+
+
+def _write_labelmap(
+    output: Path,
+    categories: list[str],
+    palette: list[tuple[int, int, int]],
+) -> None:
+    lines = ["# label:color_rgb:parts:actions"]
+    for label, color in zip(categories, palette):
+        color_text = ",".join(str(channel) for channel in color)
+        lines.append(f"{label}:{color_text}::")
+    (output / "labelmap.txt").write_text("\n".join(lines) + "\n")
 
 
 def save_palette_mask(
@@ -395,6 +407,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
     splits = make_splits(images, config)
     clean_output(config.output)
     config.output.mkdir(parents=True, exist_ok=True)
+    _write_labelmap(config.output, config.categories, config.palette)
     _write_split_files(config.output, splits)
 
     img_dir = config.output / "images"
