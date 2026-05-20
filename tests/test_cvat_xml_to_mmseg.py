@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 import cv2
@@ -7,6 +8,7 @@ import pytest
 
 from databox.segmentation.cvat_xml_to_mmseg import (
     Config,
+    config_from_args,
     convert_cvat_xml_to_mmseg,
     rasterize_image,
     validate_config,
@@ -31,6 +33,35 @@ def _config(**kwargs):
 
 def _image(xml: str):
     return ET.fromstring(xml)
+
+
+def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        """cvat_xml_to_mmseg:
+  input: yaml_annotations.xml
+  output: yaml_out
+  seed: 7
+  train: 0.6
+  categories:
+    - background
+    - object
+"""
+    )
+
+    config = config_from_args(
+        SimpleNamespace(
+            yaml=True,
+            config=config_path,
+            param_name="cvat_xml_to_mmseg",
+            input="cli_annotations.xml",
+            output="cli_out",
+        )
+    )
+
+    assert config.annotations == Path("cli_annotations.xml")
+    assert config.output == Path("cli_out")
+    assert config.seed == 7
 
 
 def test_polygon_fill_uses_category_index():

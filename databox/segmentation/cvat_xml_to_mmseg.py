@@ -37,8 +37,12 @@ def parse_args():
     exclusive_group.add_argument("--yaml", action="store_true", help="use params.yaml")
     exclusive_group.add_argument("--seed", type=int, help="random seed")
 
-    parser.add_argument("--input", type=str, help="Path to annotations.xml")
-    parser.add_argument("--output", type=str, help="Path to output directory")
+    parser.add_argument(
+        "--input", type=str, required=True, help="Path to annotations.xml"
+    )
+    parser.add_argument(
+        "--output", type=str, required=True, help="Path to output directory"
+    )
     parser.add_argument(
         "--config", type=str, default="params.yaml", help="Path to params yaml"
     )
@@ -85,8 +89,8 @@ def config_from_args(args) -> Config:
     if args.yaml:
         with open(args.config) as f:
             params = yaml.safe_load(f)[args.param_name]
-        annotations = params["input"]
-        output = params["output"]
+        annotations = args.input
+        output = args.output
         seed = params["seed"]
         train = params.get("train", 0.8)
         categories = params["categories"]
