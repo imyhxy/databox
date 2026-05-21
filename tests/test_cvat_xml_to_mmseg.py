@@ -46,6 +46,7 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
   output: yaml_out
   seed: 7
   train: 0.6
+  layout: voc
   categories:
     - background
     - object
@@ -70,6 +71,7 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
     assert config.annotations == Path("cli_annotations.xml")
     assert config.output == Path("cli_out")
     assert config.seed == 7
+    assert config.layout == "voc"
     assert config.palette == [(0, 0, 0), (255, 255, 255)]
     assert config.ignore_palette == (128, 128, 128)
 
@@ -129,11 +131,13 @@ def test_cli_mode_parses_palette():
             ignore_palette="128,128,128",
             polyline_width=5,
             strict_categories=False,
+            layout="voc",
         )
     )
 
     assert config.palette == [(0, 0, 0), (255, 255, 255)]
     assert config.ignore_palette == (128, 128, 128)
+    assert config.layout == "voc"
 
 
 def test_polygon_fill_uses_category_index():
@@ -250,9 +254,88 @@ def test_convert_writes_mmseg_layout(tmp_path):
         "object:255,255,255::",
     ]
     assert not (out / "test.txt").exists()
+    assert not (out / "JPEGImages").exists()
+    assert not (out / "SegmentationClass").exists()
+    assert not (out / "ImageSets" / "Segmentation").exists()
     with Image.open(masks[0]) as mask:
         assert mask.mode == "P"
         palette = mask.getpalette()
+        assert palette[:6] == [0, 0, 0, 255, 255, 255]
+        assert palette[255 * 3 : 255 * 3 + 3] == [128, 128, 128]
+
+
+def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
+    img1 = tmp_path / "one.jpg"
+    img2 = tmp_path / "two.png"
+    Image.new("RGB", (8, 8)).save(img1)
+    Image.new("RGB", (8, 8)).save(img2)
+    annotations = tmp_path / "annotations.xml"
+    annotations.write_text(
+        """<annotations>
+          <meta>
+            <task>
+              <labels>
+                <label><name>background</name></label>
+                <label><name>object</name></label>
+                <label><name>ignore</name></label>
+              </labels>
+            </task>
+          </meta>
+          <image id="0" name="one.jpg" width="8" height="8">
+            <polygon label="object" points="1,1;6,1;6,6;1,6" />
+            <polygon label="ignore" points="3,3;4,3;4,4;3,4" />
+          </image>
+          <image id="1" name="two.png" width="8" height="8">
+            <polyline label="object" points="1,1;6,6" />
+          </image>
+        </annotations>"""
+    )
+
+    out = tmp_path / "prepared"
+    (out / "images").mkdir(parents=True)
+    (out / "annotations").mkdir()
+    (out / "train.txt").write_text("stale\n")
+    (out / "val.txt").write_text("stale\n")
+    (out / "images" / "stale.jpg").write_text("stale")
+    (out / "annotations" / "stale.png").write_text("stale")
+
+    convert_cvat_xml_to_mmseg(
+        _config(
+            annotations=annotations,
+            output=out,
+            train=0.5,
+            categories=["background", "object"],
+            ignore_categories=["ignore"],
+            polyline_width=3,
+            layout="voc",
+        )
+    )
+
+    copied_images = sorted(path.name for path in (out / "JPEGImages").glob("*"))
+    masks = sorted((out / "SegmentationClass").glob("*.png"))
+    assert copied_images == ["one.jpg", "two.png"]
+    assert [path.name for path in masks] == ["one.png", "two.png"]
+    assert set(
+        (out / "ImageSets" / "Segmentation" / "train.txt").read_text().splitlines()
+    ) | set(
+        (out / "ImageSets" / "Segmentation" / "val.txt").read_text().splitlines()
+    ) == {"one", "two"}
+    assert (out / "labelmap.txt").read_text().splitlines() == [
+        "# label:color_rgb:parts:actions",
+        "background:0,0,0::",
+        "object:255,255,255::",
+    ]
+    assert not (out / "images").exists()
+    assert not (out / "annotations").exists()
+    assert not (out / "train.txt").exists()
+    assert not (out / "val.txt").exists()
+
+    with Image.open(out / "SegmentationClass" / "one.png") as mask:
+        assert mask.mode == "P"
+        values = np.array(mask)
+        palette = mask.getpalette()
+        assert values[2, 2] == 1
+        assert values[3, 3] == 255
         assert palette[:6] == [0, 0, 0, 255, 255, 255]
         assert palette[255 * 3 : 255 * 3 + 3] == [128, 128, 128]
 

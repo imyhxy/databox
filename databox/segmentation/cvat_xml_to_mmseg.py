@@ -1,7 +1,7 @@
 # Author: fkwong
 # File: cvat_xml_to_mmseg.py
 # Date: 5/19/26
-"""Convert CVAT annotations.xml into an MMSegmentation-style dataset."""
+"""Convert CVAT annotations.xml into a semantic segmentation dataset."""
 
 import argparse
 import random
@@ -16,6 +16,7 @@ import yaml
 from PIL import Image
 
 PARAM_NAME = "cvat_xml_to_mmseg"
+LAYOUTS = {"mmseg", "voc"}
 SHAPE_TAGS = {"polygon", "polyline", "box", "ellipse", "mask", "points", "skeleton"}
 
 
@@ -32,6 +33,7 @@ class Config:
     polyline_width: int
     strict_categories: bool
     palette: list[tuple[int, int, int]]
+    layout: str = "mmseg"
 
 
 def parse_args():
@@ -56,6 +58,13 @@ def parse_args():
         help="Name of the parameter to use from params.yaml",
     )
     parser.add_argument("--train", type=float, default=0.8, help="train split ratio")
+    parser.add_argument(
+        "--layout",
+        type=str,
+        default="mmseg",
+        choices=sorted(LAYOUTS),
+        help="Output dataset layout",
+    )
     parser.add_argument(
         "--categories",
         "-c",
@@ -116,6 +125,7 @@ def config_from_args(args) -> Config:
         polyline_width = params.get("polyline_width", 5)
         strict_categories = params.get("strict_categories", False)
         palette = params.get("palette")
+        layout = params.get("layout", getattr(args, "layout", "mmseg"))
     else:
         missing = [
             name
@@ -141,6 +151,7 @@ def config_from_args(args) -> Config:
         polyline_width = args.polyline_width
         strict_categories = args.strict_categories
         palette = args.palette
+        layout = getattr(args, "layout", "mmseg")
 
     return Config(
         annotations=Path(annotations),
@@ -154,6 +165,7 @@ def config_from_args(args) -> Config:
         polyline_width=int(polyline_width),
         strict_categories=bool(strict_categories),
         palette=parse_palette(palette),
+        layout=str(layout),
     )
 
 
@@ -218,6 +230,8 @@ def validate_config(config: Config) -> None:
         raise ValueError(f"categories and ignore_categories overlap: {sorted(overlap)}")
     if len(config.categories) > 255:
         raise ValueError("categories must contain no more than 255 labels")
+    if config.layout not in LAYOUTS:
+        raise ValueError(f"layout must be one of {sorted(LAYOUTS)}, got {config.layout}")
 
 
 def parse_points(points: str) -> np.ndarray:
@@ -317,10 +331,16 @@ def _check_unique_mask_stems(images: list[ET.Element]) -> None:
 
 
 def clean_output(output: Path) -> None:
-    for dirname in ("images", "annotations"):
+    for dirname in ("images", "annotations", "JPEGImages", "SegmentationClass"):
         path = output / dirname
         if path.exists():
             shutil.rmtree(path)
+    segmentation_sets = output / "ImageSets" / "Segmentation"
+    if segmentation_sets.exists():
+        shutil.rmtree(segmentation_sets)
+    image_sets = output / "ImageSets"
+    if image_sets.exists() and not any(image_sets.iterdir()):
+        image_sets.rmdir()
     for filename in ("train.txt", "val.txt", "labelmap.txt"):
         path = output / filename
         if path.exists():
@@ -347,13 +367,29 @@ def make_splits(
     return {"train": train_images, "val": val_images}
 
 
-def _write_split_files(output: Path, splits: dict[str, list[ET.Element]]) -> None:
+def _layout_paths(output: Path, layout: str) -> tuple[Path, Path, Path]:
+    if layout == "mmseg":
+        return output / "images", output / "annotations", output
+    if layout == "voc":
+        return (
+            output / "JPEGImages",
+            output / "SegmentationClass",
+            output / "ImageSets" / "Segmentation",
+        )
+    raise ValueError(f"layout must be one of {sorted(LAYOUTS)}, got {layout}")
+
+
+def _write_split_files(
+    output: Path, splits: dict[str, list[ET.Element]], layout: str
+) -> None:
+    _, _, split_dir = _layout_paths(output, layout)
+    split_dir.mkdir(parents=True, exist_ok=True)
     for split, split_images in splits.items():
         stems = [Path(image.attrib["name"]).stem for image in split_images]
         text = "\n".join(stems)
         if text:
             text += "\n"
-        (output / f"{split}.txt").write_text(text)
+        (split_dir / f"{split}.txt").write_text(text)
 
 
 def _write_labelmap(
@@ -408,10 +444,9 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
     clean_output(config.output)
     config.output.mkdir(parents=True, exist_ok=True)
     _write_labelmap(config.output, config.categories, config.palette)
-    _write_split_files(config.output, splits)
+    _write_split_files(config.output, splits, config.layout)
 
-    img_dir = config.output / "images"
-    ann_dir = config.output / "annotations"
+    img_dir, ann_dir, _ = _layout_paths(config.output, config.layout)
     img_dir.mkdir(parents=True, exist_ok=True)
     ann_dir.mkdir(parents=True, exist_ok=True)
 

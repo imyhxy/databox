@@ -184,6 +184,7 @@ def analyze_dataset(
     mask_paths = sorted(annotations_dir.glob("*.png")) if annotations_dir.exists() else []
     image_stems = {path.stem for path in image_paths}
     mask_stems = {path.stem for path in mask_paths}
+    split_stems = _read_split_stems(dataset_root)
 
     pixel_counts = {item.id: 0 for item in classes}
     image_counts = {item.id: 0 for item in classes}
@@ -192,11 +193,20 @@ def analyze_dataset(
     unknown_values: Counter[int] = Counter()
     image_sizes: Counter[str] = Counter()
     total_pixels = 0
+    split_pixel_counts = {
+        name: {item.id: 0 for item in classes} for name in split_stems
+    }
+    split_image_counts = {
+        name: {item.id: 0 for item in classes} for name in split_stems
+    }
+    split_mask_counts: Counter[str] = Counter()
+    split_total_pixels: Counter[str] = Counter()
 
     for mask_path in mask_paths:
         mask_counts, size = _read_mask_counts(mask_path)
+        mask_total_pixels = sum(mask_counts.values())
         image_sizes[f"{size[0]}x{size[1]}"] += 1
-        total_pixels += sum(mask_counts.values())
+        total_pixels += mask_total_pixels
 
         for value, count in mask_counts.items():
             if value in class_ids:
@@ -212,12 +222,23 @@ def analyze_dataset(
         if mask_counts.get(ignore_index, 0) > 0:
             ignore_image_count += 1
 
+        for split_name, stems in split_stems.items():
+            if mask_path.stem not in stems:
+                continue
+            split_mask_counts[split_name] += 1
+            split_total_pixels[split_name] += mask_total_pixels
+            for class_id in class_ids:
+                count = mask_counts.get(class_id, 0)
+                split_pixel_counts[split_name][class_id] += count
+                if count > 0:
+                    split_image_counts[split_name][class_id] += 1
+
     weights = compute_ocnet_weights(pixel_counts)
     warnings = _make_warnings(
         classes=classes,
         image_stems=image_stems,
         mask_stems=mask_stems,
-        split_stems=_read_split_stems(dataset_root),
+        split_stems=split_stems,
         unknown_values=unknown_values,
         pixel_counts=pixel_counts,
     )
@@ -243,7 +264,14 @@ def analyze_dataset(
         for item in classes
     )
 
-    split_stems = _read_split_stems(dataset_root)
+    split_stats = _build_split_stats(
+        classes=classes,
+        split_stems=split_stems,
+        split_pixel_counts=split_pixel_counts,
+        split_image_counts=split_image_counts,
+        split_mask_counts=split_mask_counts,
+        split_total_pixels=split_total_pixels,
+    )
     data = {
         "dataset_root": str(dataset_root),
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -257,6 +285,7 @@ def analyze_dataset(
         ],
         "classes": class_rows,
         "class_weights_ocnet": class_weights,
+        "split_stats": split_stats,
         "ignore_index": {
             "value": ignore_index,
             "pixel_count": ignore_pixel_count,
@@ -364,6 +393,51 @@ def _make_warnings(
     return warnings
 
 
+def _build_split_stats(
+    classes: list[ClassInfo],
+    split_stems: dict[str, set[str]],
+    split_pixel_counts: dict[str, dict[int, int]],
+    split_image_counts: dict[str, dict[int, int]],
+    split_mask_counts: Counter[str],
+    split_total_pixels: Counter[str],
+) -> dict[str, dict[str, Any]]:
+    split_stats = {}
+    for split_name in ("train", "val"):
+        if split_name not in split_stems:
+            continue
+
+        pixel_counts = split_pixel_counts[split_name]
+        image_counts = split_image_counts[split_name]
+        total_pixels = split_total_pixels[split_name]
+        mask_count = split_mask_counts[split_name]
+        weights = compute_ocnet_weights(pixel_counts)
+        class_rows = []
+        for item in classes:
+            pixel_count = pixel_counts[item.id]
+            image_count = image_counts[item.id]
+            class_rows.append(
+                {
+                    "id": item.id,
+                    "name": item.name,
+                    "color_rgb": list(item.color_rgb),
+                    "pixel_count": pixel_count,
+                    "image_count": image_count,
+                    "pixel_ratio": _ratio(pixel_count, total_pixels),
+                    "image_ratio": _ratio(image_count, mask_count),
+                    "class_weight_ocnet": _round_float(weights[item.id]),
+                }
+            )
+
+        split_stats[split_name] = {
+            "stem_count": len(split_stems[split_name]),
+            "mask_count": mask_count,
+            "total_pixels": total_pixels,
+            "classes": class_rows,
+            "class_weights_ocnet": _class_weights_flow_list(classes, weights),
+        }
+    return split_stats
+
+
 def _ratio(numerator: int, denominator: int) -> float:
     if denominator == 0:
         return 0.0
@@ -380,6 +454,13 @@ def _round_float_four_decimals(value: float | None) -> FourDecimalFloat:
     if value is None:
         return FourDecimalFloat(0.0)
     return FourDecimalFloat(round(value, 4))
+
+
+def _class_weights_flow_list(
+    classes: list[ClassInfo],
+    weights: dict[int, float | None],
+) -> FlowList:
+    return FlowList(_round_float_four_decimals(weights[item.id]) for item in classes)
 
 
 def _dump_dataset_card_yaml(data: dict[str, Any]) -> str:
@@ -416,8 +497,10 @@ def write_dataset_card(
 def draw_dataset_card(data: dict[str, Any], output_path: Path) -> None:
     classes = data["classes"]
     foreground_classes = _foreground_pixel_classes(classes)
+    train_classes = _split_pixel_classes(data, "train")
+    val_classes = _split_pixel_classes(data, "val")
     width = 1600
-    legend_y = 1394
+    legend_y = 1758
     legend_height = _class_key_height(classes)
     height = legend_y + legend_height + 46
     image = Image.new("RGB", (width, height), (246, 248, 251))
@@ -482,9 +565,37 @@ def draw_dataset_card(data: dict[str, Any], output_path: Path) -> None:
     )
     _draw_vertical_bar_chart(
         draw=draw,
-        classes=foreground_classes,
+        classes=train_classes,
         x=36,
         y=840,
+        width=748,
+        height=330,
+        value_key="pixel_count",
+        title="Train Pixel Count by Class",
+        font=font,
+        small_font=small_font,
+        percent_font=tiny_font,
+        percent_key="pixel_ratio",
+    )
+    _draw_vertical_bar_chart(
+        draw=draw,
+        classes=val_classes,
+        x=816,
+        y=840,
+        width=748,
+        height=330,
+        value_key="pixel_count",
+        title="Val Pixel Count by Class",
+        font=font,
+        small_font=small_font,
+        percent_font=tiny_font,
+        percent_key="pixel_ratio",
+    )
+    _draw_vertical_bar_chart(
+        draw=draw,
+        classes=foreground_classes,
+        x=36,
+        y=1204,
         width=1528,
         height=330,
         value_key="pixel_count",
@@ -495,7 +606,7 @@ def draw_dataset_card(data: dict[str, Any], output_path: Path) -> None:
         percent_key="foreground_pixel_ratio",
     )
 
-    panel_y = 1204
+    panel_y = 1568
     _draw_summary_panel(draw, data, 36, panel_y, 748, 160, heading_font, font, small_font)
     _draw_imbalance_panel(
         draw, classes, 816, panel_y, 748, 160, heading_font, font, small_font
@@ -631,6 +742,23 @@ def _foreground_pixel_classes(classes: list[dict[str, Any]]) -> list[dict[str, A
     return foreground
 
 
+def _split_pixel_classes(data: dict[str, Any], split_name: str) -> list[dict[str, Any]]:
+    split_stats = data.get("split_stats", {}).get(split_name)
+    if split_stats:
+        return [dict(row) for row in split_stats["classes"]]
+
+    zero_rows = []
+    for row in data["classes"]:
+        zero_row = dict(row)
+        zero_row["pixel_count"] = 0
+        zero_row["image_count"] = 0
+        zero_row["pixel_ratio"] = 0.0
+        zero_row["image_ratio"] = 0.0
+        zero_row["class_weight_ocnet"] = None
+        zero_rows.append(zero_row)
+    return zero_rows
+
+
 def _class_key_height(classes: list[dict[str, Any]]) -> int:
     columns = 4
     rows_per_column = max(1, math.ceil(len(classes) / columns))
@@ -640,8 +768,10 @@ def _class_key_height(classes: list[dict[str, Any]]) -> int:
 def write_dataset_card_svg(data: dict[str, Any], output_path: Path) -> None:
     classes = data["classes"]
     foreground_classes = _foreground_pixel_classes(classes)
+    train_classes = _split_pixel_classes(data, "train")
+    val_classes = _split_pixel_classes(data, "val")
     width = 1600
-    legend_y = 1394
+    legend_y = 1758
     legend_height = _class_key_height(classes)
     height = legend_y + legend_height + 46
     parts = [
@@ -707,9 +837,33 @@ def write_dataset_card_svg(data: dict[str, Any], output_path: Path) -> None:
     )
     parts.extend(
         _svg_vertical_bar_chart(
-            classes=foreground_classes,
+            classes=train_classes,
             x=36,
             y=840,
+            width=748,
+            height=330,
+            value_key="pixel_count",
+            percent_key="pixel_ratio",
+            title="Train Pixel Count by Class",
+        )
+    )
+    parts.extend(
+        _svg_vertical_bar_chart(
+            classes=val_classes,
+            x=816,
+            y=840,
+            width=748,
+            height=330,
+            value_key="pixel_count",
+            percent_key="pixel_ratio",
+            title="Val Pixel Count by Class",
+        )
+    )
+    parts.extend(
+        _svg_vertical_bar_chart(
+            classes=foreground_classes,
+            x=36,
+            y=1204,
             width=1528,
             height=330,
             value_key="pixel_count",
@@ -717,8 +871,8 @@ def write_dataset_card_svg(data: dict[str, Any], output_path: Path) -> None:
             title="Pixel Count by Class, Excluding Background",
         )
     )
-    parts.extend(_svg_summary_panel(data, 36, 1204, 748, 160))
-    parts.extend(_svg_imbalance_panel(classes, 816, 1204, 748, 160))
+    parts.extend(_svg_summary_panel(data, 36, 1568, 748, 160))
+    parts.extend(_svg_imbalance_panel(classes, 816, 1568, 748, 160))
     parts.extend(_svg_class_key(classes, 36, legend_y, 1528, legend_height))
     parts.append("</svg>")
     output_path.parent.mkdir(parents=True, exist_ok=True)

@@ -80,6 +80,23 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
     assert data["ignore_index"]["image_count"] == 1
     assert data["total_pixels"] == 8
     assert data["splits"] == {"train": 1, "val": 2}
+    assert data["split_stats"]["train"]["stem_count"] == 1
+    assert data["split_stats"]["train"]["mask_count"] == 1
+    assert data["split_stats"]["train"]["total_pixels"] == 4
+    train_rows = {row["name"]: row for row in data["split_stats"]["train"]["classes"]}
+    assert train_rows["background"]["pixel_count"] == 1
+    assert train_rows["object"]["pixel_count"] == 2
+    assert data["split_stats"]["train"]["class_weights_ocnet"] == [
+        round(row["class_weight_ocnet"], 4)
+        if row["class_weight_ocnet"] is not None
+        else 0.0
+        for row in data["split_stats"]["train"]["classes"]
+    ]
+    assert data["split_stats"]["val"]["stem_count"] == 2
+    assert data["split_stats"]["val"]["mask_count"] == 1
+    val_rows = {row["name"]: row for row in data["split_stats"]["val"]["classes"]}
+    assert val_rows["background"]["pixel_count"] == 2
+    assert val_rows["object"]["pixel_count"] == 1
     assert any("Unknown mask values" in item for item in data["validation_warnings"])
     assert any("val.txt contains 1 stems" in item for item in data["validation_warnings"])
     assert any("Classes with zero pixels: empty" == item for item in data["validation_warnings"])
@@ -106,11 +123,16 @@ def test_write_dataset_card_creates_yaml_and_svg(tmp_path):
     assert card.svg_path.exists()
     assert not (root / "dataset_card.png").exists()
     assert card.svg_path.stat().st_size > 0
-    assert "<svg" in card.svg_path.read_text()
+    svg_text = card.svg_path.read_text()
+    assert "<svg" in svg_text
+    assert "Train Pixel Count by Class" in svg_text
+    assert "Val Pixel Count by Class" in svg_text
     ET.parse(card.svg_path)
     data = yaml.safe_load(card.yaml_path.read_text())
     assert data["image_count"] == 2
     assert data["mask_count"] == 2
-    assert "class_weights_ocnet: [1.5000, 1.5000, 0.0000]" in (
-        card.yaml_path.read_text()
-    )
+    yaml_text = card.yaml_path.read_text()
+    assert "class_weights_ocnet: [1.5000, 1.5000, 0.0000]" in yaml_text
+    assert "split_stats:" in yaml_text
+    assert "train:" in yaml_text
+    assert "val:" in yaml_text
