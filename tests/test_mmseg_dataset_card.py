@@ -47,6 +47,22 @@ def _make_dataset(tmp_path):
     return root
 
 
+def _make_voc_dataset(tmp_path):
+    root = tmp_path / "voc_dataset"
+    (root / "JPEGImages").mkdir(parents=True)
+    (root / "SegmentationClass").mkdir()
+    (root / "ImageSets" / "Segmentation").mkdir(parents=True)
+    _write_labelmap(root / "labelmap.txt")
+    Image.new("RGB", (2, 2)).save(root / "JPEGImages" / "one.jpg")
+    Image.new("RGB", (2, 2)).save(root / "JPEGImages" / "two.png")
+    _save_mask(root / "SegmentationClass" / "one.png", [[0, 1], [1, 255]])
+    _save_mask(root / "SegmentationClass" / "two.png", [[0, 0], [1, 7]])
+    (root / "ImageSets" / "Segmentation" / "train.txt").write_text("one\n")
+    (root / "ImageSets" / "Segmentation" / "val.txt").write_text("two\nmissing\n")
+    (root / "ImageSets" / "Segmentation" / "trainval.txt").write_text("one\ntwo\n")
+    return root
+
+
 def test_parse_labelmap_reads_ordered_classes(tmp_path):
     labelmap = tmp_path / "labelmap.txt"
     _write_labelmap(labelmap)
@@ -100,6 +116,48 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
     assert any("Unknown mask values" in item for item in data["validation_warnings"])
     assert any("val.txt contains 1 stems" in item for item in data["validation_warnings"])
     assert any("Classes with zero pixels: empty" == item for item in data["validation_warnings"])
+
+
+def test_analyze_dataset_auto_detects_voc_layout(tmp_path):
+    root = _make_voc_dataset(tmp_path)
+
+    data = analyze_dataset(root)
+
+    rows = {row["name"]: row for row in data["classes"]}
+    assert data["layout"] == "voc"
+    assert data["image_count"] == 2
+    assert data["mask_count"] == 2
+    assert data["splits"] == {"train": 1, "val": 2, "trainval": 2}
+    assert data["split_stats"]["trainval"]["stem_count"] == 2
+    assert data["split_stats"]["trainval"]["mask_count"] == 2
+    assert rows["background"]["pixel_count"] == 3
+    assert rows["object"]["pixel_count"] == 3
+    assert data["ignore_index"]["pixel_count"] == 1
+    assert any("Unknown mask values" in item for item in data["validation_warnings"])
+    assert any("val.txt contains 1 stems" in item for item in data["validation_warnings"])
+
+
+def test_analyze_dataset_reports_ambiguous_layout(tmp_path):
+    root = _make_dataset(tmp_path)
+    (root / "JPEGImages").mkdir()
+    (root / "SegmentationClass").mkdir()
+    Image.new("RGB", (2, 2)).save(root / "JPEGImages" / "one.jpg")
+    _save_mask(root / "SegmentationClass" / "one.png", [[0, 1], [1, 255]])
+
+    with pytest.raises(ValueError, match="multiple layouts are present"):
+        analyze_dataset(root)
+
+
+def test_analyze_dataset_ignores_empty_stale_layout_directories(tmp_path):
+    root = _make_dataset(tmp_path)
+    (root / "JPEGImages").mkdir()
+    (root / "SegmentationClass").mkdir()
+
+    data = analyze_dataset(root)
+
+    assert data["layout"] == "mmseg"
+    assert data["image_count"] == 2
+    assert data["mask_count"] == 2
 
 
 def test_compute_ocnet_weights_match_formula_and_skip_zero_counts():

@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
+SPLIT_FILE_STEMS = ("train", "val", "trainval", "test")
 OCNET_WEIGHT_SOURCE = (
     "https://github.com/openseg-group/OCNet.pytorch/issues/"
     "14#issuecomment-528144988"
@@ -32,6 +33,15 @@ class DatasetCard:
     data: dict[str, Any]
     svg_path: Path
     yaml_path: Path
+
+
+@dataclass(frozen=True)
+class DatasetLayout:
+    name: str
+    images_dir: Path
+    masks_dir: Path
+    split_dir: Path
+    labelmap_path: Path
 
 
 class FourDecimalFloat(float):
@@ -75,7 +85,10 @@ def parse_args() -> argparse.Namespace:
         "--dataset-root",
         required=True,
         type=Path,
-        help="Path containing images/, annotations/, labelmap.txt, and split files",
+        help=(
+            "Path containing either MMSeg images/ and annotations/ or Pascal VOC "
+            "JPEGImages/ and SegmentationClass/"
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -171,20 +184,19 @@ def analyze_dataset(
     include_background: bool = True,
 ) -> dict[str, Any]:
     dataset_root = dataset_root.resolve()
-    classes = parse_labelmap(dataset_root / "labelmap.txt")
+    layout = detect_dataset_layout(dataset_root)
+    classes = parse_labelmap(layout.labelmap_path)
     if not include_background:
         classes = classes[1:]
     if not classes:
         raise ValueError("No classes remain after applying --no-include-background")
 
     class_ids = {item.id for item in classes}
-    images_dir = dataset_root / "images"
-    annotations_dir = dataset_root / "annotations"
-    image_paths = _list_image_paths(images_dir)
-    mask_paths = sorted(annotations_dir.glob("*.png")) if annotations_dir.exists() else []
+    image_paths = _list_image_paths(layout.images_dir)
+    mask_paths = _list_mask_paths(layout.masks_dir)
     image_stems = {path.stem for path in image_paths}
     mask_stems = {path.stem for path in mask_paths}
-    split_stems = _read_split_stems(dataset_root)
+    split_stems = _read_split_stems(layout.split_dir)
 
     pixel_counts = {item.id: 0 for item in classes}
     image_counts = {item.id: 0 for item in classes}
@@ -274,6 +286,7 @@ def analyze_dataset(
     )
     data = {
         "dataset_root": str(dataset_root),
+        "layout": layout.name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "image_count": len(image_paths),
         "mask_count": len(mask_paths),
@@ -308,6 +321,65 @@ def analyze_dataset(
     return data
 
 
+def detect_dataset_layout(dataset_root: Path) -> DatasetLayout:
+    dataset_root = dataset_root.resolve()
+    labelmap_path = dataset_root / "labelmap.txt"
+    candidates = [
+        DatasetLayout(
+            name="mmseg",
+            images_dir=dataset_root / "images",
+            masks_dir=dataset_root / "annotations",
+            split_dir=dataset_root,
+            labelmap_path=labelmap_path,
+        ),
+        DatasetLayout(
+            name="voc",
+            images_dir=dataset_root / "JPEGImages",
+            masks_dir=dataset_root / "SegmentationClass",
+            split_dir=dataset_root / "ImageSets" / "Segmentation",
+            labelmap_path=labelmap_path,
+        ),
+    ]
+    scored_matches = [
+        (candidate, _layout_evidence(candidate))
+        for candidate in candidates
+        if _layout_exists(candidate)
+    ]
+    if not scored_matches:
+        raise FileNotFoundError(
+            "Could not detect dataset layout. Expected either MMSeg "
+            "images/ and annotations/ or Pascal VOC JPEGImages/ and "
+            "SegmentationClass/ under "
+            f"{dataset_root}"
+        )
+    max_score = max(score for _, score in scored_matches)
+    best_matches = [
+        candidate for candidate, score in scored_matches if score == max_score
+    ]
+    if len(best_matches) == 1:
+        return best_matches[0]
+    names = ", ".join(candidate.name for candidate in best_matches)
+    raise ValueError(
+        "Could not auto detect dataset layout because multiple layouts are present: "
+        f"{names}"
+    )
+
+
+def _layout_exists(layout: DatasetLayout) -> bool:
+    return layout.images_dir.is_dir() and layout.masks_dir.is_dir()
+
+
+def _layout_evidence(layout: DatasetLayout) -> int:
+    score = 1
+    if _list_image_paths(layout.images_dir):
+        score += 1
+    if _list_mask_paths(layout.masks_dir):
+        score += 1
+    if any((layout.split_dir / f"{split}.txt").exists() for split in SPLIT_FILE_STEMS):
+        score += 1
+    return score
+
+
 def _read_mask_counts(mask_path: Path) -> tuple[Counter[int], tuple[int, int]]:
     with Image.open(mask_path) as image:
         if image.mode not in {"P", "L"}:
@@ -330,13 +402,25 @@ def _list_image_paths(images_dir: Path) -> list[Path]:
     )
 
 
-def _read_split_stems(dataset_root: Path) -> dict[str, set[str]]:
+def _list_mask_paths(masks_dir: Path) -> list[Path]:
+    if not masks_dir.exists():
+        return []
+    return sorted(
+        path
+        for path in masks_dir.iterdir()
+        if path.is_file() and path.suffix.lower() == ".png"
+    )
+
+
+def _read_split_stems(split_dir: Path) -> dict[str, set[str]]:
     split_stems = {}
-    for split in ("train", "val", "test"):
-        path = dataset_root / f"{split}.txt"
+    if not split_dir.exists():
+        return split_stems
+    for split in SPLIT_FILE_STEMS:
+        path = split_dir / f"{split}.txt"
         if not path.exists():
             continue
-        split_stems[split] = {
+        split_stems[path.stem] = {
             line.strip()
             for line in path.read_text().splitlines()
             if line.strip()
@@ -402,10 +486,7 @@ def _build_split_stats(
     split_total_pixels: Counter[str],
 ) -> dict[str, dict[str, Any]]:
     split_stats = {}
-    for split_name in ("train", "val"):
-        if split_name not in split_stems:
-            continue
-
+    for split_name in split_stems:
         pixel_counts = split_pixel_counts[split_name]
         image_counts = split_image_counts[split_name]
         total_pixels = split_total_pixels[split_name]
