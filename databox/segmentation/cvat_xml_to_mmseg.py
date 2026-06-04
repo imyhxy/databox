@@ -456,7 +456,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
             if not src.exists():
                 raise FileNotFoundError(f"Image not found: {src}")
 
-            dst_img = img_dir / src.name
+            dst_img = img_dir / (src.stem + ".jpg")
             dst_mask = ann_dir / f"{src.stem}.png"
             shutil.copy2(src, dst_img)
 
