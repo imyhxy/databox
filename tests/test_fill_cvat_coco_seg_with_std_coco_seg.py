@@ -93,7 +93,9 @@ class TestCocoToCvat(TestCase):
             "categories": [{"id": 1, "name": "hood"}],
         }
 
-        with self.assertRaisesRegex(ValueError, "Target CVAT annotations are not empty"):
+        with self.assertRaisesRegex(
+            ValueError, "Target CVAT annotations are not empty"
+        ):
             migrate_coco_annotations(standard, cvat)
 
     def test_rejects_duplicate_cvat_image_basenames(self):

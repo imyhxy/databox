@@ -1,8 +1,8 @@
 import argparse
 from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
 import numpy as np
+from PIL import Image, UnidentifiedImageError
 
 
 def parse_args():

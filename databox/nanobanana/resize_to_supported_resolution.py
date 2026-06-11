@@ -1,4 +1,5 @@
 """Resize images to Nano Banana supported output resolutions."""
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +10,6 @@ from typing import Iterable
 
 import yaml
 from PIL import Image, ImageOps, UnidentifiedImageError
-
 
 SUPPORTED_EXTENSIONS = {
     ".jpg",
@@ -244,9 +244,7 @@ def iter_image_paths(input_path: Path) -> Iterable[Path]:
 def parse_background(value: str) -> tuple[int, ...]:
     parts = value.split(",")
     if len(parts) not in {3, 4}:
-        raise argparse.ArgumentTypeError(
-            "background must be 'R,G,B' or 'R,G,B,A'"
-        )
+        raise argparse.ArgumentTypeError("background must be 'R,G,B' or 'R,G,B,A'")
 
     try:
         channels = tuple(int(part) for part in parts)
@@ -320,9 +318,7 @@ def _flatten_targets(
         return list(supported[lock_resolution].values())
 
     return [
-        target
-        for aspect_map in supported.values()
-        for target in aspect_map.values()
+        target for aspect_map in supported.values() for target in aspect_map.values()
     ]
 
 

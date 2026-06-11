@@ -319,7 +319,10 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
         (out / "ImageSets" / "Segmentation" / "train.txt").read_text().splitlines()
     ) | set(
         (out / "ImageSets" / "Segmentation" / "val.txt").read_text().splitlines()
-    ) == {"one", "two"}
+    ) == {
+        "one",
+        "two",
+    }
     assert (out / "labelmap.txt").read_text().splitlines() == [
         "# label:color_rgb:parts:actions",
         "background:0,0,0::",

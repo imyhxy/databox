@@ -12,12 +12,10 @@ from typing import Any
 import yaml
 from PIL import Image, ImageDraw, ImageFont
 
-
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 SPLIT_FILE_STEMS = ("train", "val", "trainval", "test")
 OCNET_WEIGHT_SOURCE = (
-    "https://github.com/openseg-group/OCNet.pytorch/issues/"
-    "14#issuecomment-528144988"
+    "https://github.com/openseg-group/OCNet.pytorch/issues/" "14#issuecomment-528144988"
 )
 
 
@@ -155,17 +153,12 @@ def _parse_color(text: str, line_number: int) -> tuple[int, int, int]:
 
 
 def compute_ocnet_weights(pixel_counts: dict[int, int]) -> dict[int, float | None]:
-    nonzero = {
-        class_id: count
-        for class_id, count in pixel_counts.items()
-        if count > 0
-    }
+    nonzero = {class_id: count for class_id, count in pixel_counts.items() if count > 0}
     if not nonzero:
         return {class_id: None for class_id in pixel_counts}
 
     raw_weights = {
-        class_id: 1.0 / math.log1p(count)
-        for class_id, count in nonzero.items()
+        class_id: 1.0 / math.log1p(count) for class_id, count in nonzero.items()
     }
     normalizer = sum(raw_weights.values())
     class_count = len(pixel_counts)
@@ -272,8 +265,7 @@ def analyze_dataset(
             }
         )
     class_weights = FlowList(
-        _round_float_four_decimals(weights[item.id])
-        for item in classes
+        _round_float_four_decimals(weights[item.id]) for item in classes
     )
 
     split_stats = _build_split_stats(
@@ -421,9 +413,7 @@ def _read_split_stems(split_dir: Path) -> dict[str, set[str]]:
         if not path.exists():
             continue
         split_stems[path.stem] = {
-            line.strip()
-            for line in path.read_text().splitlines()
-            if line.strip()
+            line.strip() for line in path.read_text().splitlines() if line.strip()
         }
     return split_stems
 
@@ -688,7 +678,9 @@ def draw_dataset_card(data: dict[str, Any], output_path: Path) -> None:
     )
 
     panel_y = 1568
-    _draw_summary_panel(draw, data, 36, panel_y, 748, 160, heading_font, font, small_font)
+    _draw_summary_panel(
+        draw, data, 36, panel_y, 748, 160, heading_font, font, small_font
+    )
     _draw_imbalance_panel(
         draw, classes, 816, panel_y, 748, 160, heading_font, font, small_font
     )
@@ -1031,7 +1023,7 @@ def _svg_vertical_bar_chart(
         parts.append(
             f'<text x="{center_x}" y="{max(axis_top + 12, top - 5)}" '
             f'class="tiny" text-anchor="middle">'
-            f'{_svg_text(_format_bar_percent(row[percent_key]))}</text>'
+            f"{_svg_text(_format_bar_percent(row[percent_key]))}</text>"
         )
         parts.append(
             f'<text x="{center_x}" y="{plot_bottom + 25}" class="small" '
@@ -1040,13 +1032,20 @@ def _svg_vertical_bar_chart(
     return parts
 
 
-def _svg_summary_panel(data: dict[str, Any], x: int, y: int, width: int, height: int) -> list[str]:
-    splits = ", ".join(
-        f"{name}: {count}" for name, count in data.get("splits", {}).items()
-    ) or "none"
-    sizes = ", ".join(
-        f"{item['size']} ({item['count']})" for item in data.get("image_sizes", [])[:3]
-    ) or "none"
+def _svg_summary_panel(
+    data: dict[str, Any], x: int, y: int, width: int, height: int
+) -> list[str]:
+    splits = (
+        ", ".join(f"{name}: {count}" for name, count in data.get("splits", {}).items())
+        or "none"
+    )
+    sizes = (
+        ", ".join(
+            f"{item['size']} ({item['count']})"
+            for item in data.get("image_sizes", [])[:3]
+        )
+        or "none"
+    )
     ignore = data["ignore_index"]
     lines = [
         f"Splits: {splits}",
@@ -1079,12 +1078,18 @@ def _svg_imbalance_panel(
     present = [row for row in classes if row["pixel_count"] > 0]
     rare = sorted(present, key=lambda row: row["pixel_ratio"])[:3]
     dominant = sorted(present, key=lambda row: row["pixel_ratio"], reverse=True)[:3]
-    rare_text = ", ".join(
-        f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in rare
-    ) or "none"
-    dominant_text = ", ".join(
-        f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in dominant
-    ) or "none"
+    rare_text = (
+        ", ".join(
+            f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in rare
+        )
+        or "none"
+    )
+    dominant_text = (
+        ", ".join(
+            f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in dominant
+        )
+        or "none"
+    )
     return [
         _svg_panel(x, y, width, height, "#f8fafc"),
         f'<text x="{x + 18}" y="{y + 38}" class="heading">Class Balance</text>',
@@ -1147,12 +1152,17 @@ def _draw_summary_panel(
 ) -> None:
     _panel(draw, x, y, width, height)
     draw.text((x + 18, y + 14), "Summary", fill=(20, 24, 30), font=heading_font)
-    splits = ", ".join(
-        f"{name}: {count}" for name, count in data.get("splits", {}).items()
-    ) or "none"
-    sizes = ", ".join(
-        f"{item['size']} ({item['count']})" for item in data.get("image_sizes", [])[:3]
-    ) or "none"
+    splits = (
+        ", ".join(f"{name}: {count}" for name, count in data.get("splits", {}).items())
+        or "none"
+    )
+    sizes = (
+        ", ".join(
+            f"{item['size']} ({item['count']})"
+            for item in data.get("image_sizes", [])[:3]
+        )
+        or "none"
+    )
     ignore = data["ignore_index"]
     lines = [
         f"Splits: {splits}",
@@ -1189,15 +1199,23 @@ def _draw_imbalance_panel(
     present = [row for row in classes if row["pixel_count"] > 0]
     rare = sorted(present, key=lambda row: row["pixel_ratio"])[:3]
     dominant = sorted(present, key=lambda row: row["pixel_ratio"], reverse=True)[:3]
-    rare_text = ", ".join(
-        f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in rare
-    ) or "none"
-    dominant_text = ", ".join(
-        f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in dominant
-    ) or "none"
+    rare_text = (
+        ", ".join(
+            f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in rare
+        )
+        or "none"
+    )
+    dominant_text = (
+        ", ".join(
+            f"{row['name']} {_format_percent(row['pixel_ratio'])}" for row in dominant
+        )
+        or "none"
+    )
     draw.text((x + 18, y + 52), "Rarest by pixels", fill=(65, 72, 84), font=small_font)
     draw.text((x + 18, y + 76), _truncate(rare_text, 82), fill=(42, 48, 58), font=font)
-    draw.text((x + 18, y + 106), "Largest by pixels", fill=(65, 72, 84), font=small_font)
+    draw.text(
+        (x + 18, y + 106), "Largest by pixels", fill=(65, 72, 84), font=small_font
+    )
     draw.text(
         (x + 18, y + 130),
         _truncate(dominant_text, 82),

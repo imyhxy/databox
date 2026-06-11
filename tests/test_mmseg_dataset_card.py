@@ -87,9 +87,11 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
     assert rows["empty"]["pixel_count"] == 0
     assert rows["empty"]["class_weight_ocnet"] is None
     assert data["class_weights_ocnet"] == [
-        round(row["class_weight_ocnet"], 4)
-        if row["class_weight_ocnet"] is not None
-        else 0.0
+        (
+            round(row["class_weight_ocnet"], 4)
+            if row["class_weight_ocnet"] is not None
+            else 0.0
+        )
         for row in data["classes"]
     ]
     assert data["ignore_index"]["pixel_count"] == 1
@@ -103,9 +105,11 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
     assert train_rows["background"]["pixel_count"] == 1
     assert train_rows["object"]["pixel_count"] == 2
     assert data["split_stats"]["train"]["class_weights_ocnet"] == [
-        round(row["class_weight_ocnet"], 4)
-        if row["class_weight_ocnet"] is not None
-        else 0.0
+        (
+            round(row["class_weight_ocnet"], 4)
+            if row["class_weight_ocnet"] is not None
+            else 0.0
+        )
         for row in data["split_stats"]["train"]["classes"]
     ]
     assert data["split_stats"]["val"]["stem_count"] == 2
@@ -114,8 +118,13 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
     assert val_rows["background"]["pixel_count"] == 2
     assert val_rows["object"]["pixel_count"] == 1
     assert any("Unknown mask values" in item for item in data["validation_warnings"])
-    assert any("val.txt contains 1 stems" in item for item in data["validation_warnings"])
-    assert any("Classes with zero pixels: empty" == item for item in data["validation_warnings"])
+    assert any(
+        "val.txt contains 1 stems" in item for item in data["validation_warnings"]
+    )
+    assert any(
+        "Classes with zero pixels: empty" == item
+        for item in data["validation_warnings"]
+    )
 
 
 def test_analyze_dataset_auto_detects_voc_layout(tmp_path):
@@ -134,7 +143,9 @@ def test_analyze_dataset_auto_detects_voc_layout(tmp_path):
     assert rows["object"]["pixel_count"] == 3
     assert data["ignore_index"]["pixel_count"] == 1
     assert any("Unknown mask values" in item for item in data["validation_warnings"])
-    assert any("val.txt contains 1 stems" in item for item in data["validation_warnings"])
+    assert any(
+        "val.txt contains 1 stems" in item for item in data["validation_warnings"]
+    )
 
 
 def test_analyze_dataset_reports_ambiguous_layout(tmp_path):

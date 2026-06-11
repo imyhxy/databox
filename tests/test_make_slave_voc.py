@@ -1,9 +1,6 @@
 import pytest
 
-from databox.segmentation.make_slave_voc import (
-    build_slave_voc_dataset,
-    scene_key,
-)
+from databox.segmentation.make_slave_voc import build_slave_voc_dataset, scene_key
 
 
 def _make_master(root):
@@ -13,12 +10,8 @@ def _make_master(root):
     (master / "labelmap.txt").write_text("background:0,0,0::\n")
     (master / "SegmentationClass" / "scene-a_0G_080.png").write_text("mask-a")
     (master / "SegmentationClass" / "scene-b_0G_080.png").write_text("mask-b")
-    (
-        master / "ImageSets" / "Segmentation" / "train.txt"
-    ).write_text("scene-a_0G_080\n")
-    (
-        master / "ImageSets" / "Segmentation" / "val.txt"
-    ).write_text("scene-b_0G_080\n")
+    (master / "ImageSets" / "Segmentation" / "train.txt").write_text("scene-a_0G_080\n")
+    (master / "ImageSets" / "Segmentation" / "val.txt").write_text("scene-b_0G_080\n")
     return master
 
 
@@ -78,9 +71,7 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
 def test_build_slave_voc_dataset_rejects_duplicate_master_scene_keys(tmp_path):
     master = _make_master(tmp_path)
     (master / "SegmentationClass" / "scene-a_0G_100.png").write_text("mask-a-100")
-    (
-        master / "ImageSets" / "Segmentation" / "val.txt"
-    ).write_text("scene-a_0G_100\n")
+    (master / "ImageSets" / "Segmentation" / "val.txt").write_text("scene-a_0G_100\n")
     slave = _make_slave(tmp_path)
 
     with pytest.raises(ValueError, match="Duplicate master scene key"):

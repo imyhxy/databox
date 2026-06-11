@@ -231,7 +231,9 @@ def validate_config(config: Config) -> None:
     if len(config.categories) > 255:
         raise ValueError("categories must contain no more than 255 labels")
     if config.layout not in LAYOUTS:
-        raise ValueError(f"layout must be one of {sorted(LAYOUTS)}, got {config.layout}")
+        raise ValueError(
+            f"layout must be one of {sorted(LAYOUTS)}, got {config.layout}"
+        )
 
 
 def parse_points(points: str) -> np.ndarray:

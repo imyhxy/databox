@@ -9,7 +9,6 @@ from databox.nanobanana.resize_to_supported_resolution import (
     resize_one,
 )
 
-
 RESOLUTION_YAML = (
     Path(__file__).resolve().parents[1]
     / "databox"
