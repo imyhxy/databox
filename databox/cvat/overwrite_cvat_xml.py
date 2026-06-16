@@ -6,6 +6,7 @@
 此脚本只会覆盖分类标签。从数据集A中挑选一部分图片组成数据集B，对数据集进行标注并导出标签。
 此脚本可以将数据集B的标签覆盖到数据集A中。
 """
+
 import argparse
 from pathlib import Path
 from xml.etree import ElementTree as ET

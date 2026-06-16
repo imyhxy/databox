@@ -15,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFont
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 SPLIT_FILE_STEMS = ("train", "val", "trainval", "test")
 OCNET_WEIGHT_SOURCE = (
-    "https://github.com/openseg-group/OCNet.pytorch/issues/" "14#issuecomment-528144988"
+    "https://github.com/openseg-group/OCNet.pytorch/issues/14#issuecomment-528144988"
 )
 
 
@@ -155,7 +155,7 @@ def _parse_color(text: str, line_number: int) -> tuple[int, int, int]:
 def compute_ocnet_weights(pixel_counts: dict[int, int]) -> dict[int, float | None]:
     nonzero = {class_id: count for class_id, count in pixel_counts.items() if count > 0}
     if not nonzero:
-        return {class_id: None for class_id in pixel_counts}
+        return dict.fromkeys(pixel_counts)
 
     raw_weights = {
         class_id: 1.0 / math.log1p(count) for class_id, count in nonzero.items()
@@ -983,7 +983,8 @@ def _svg_vertical_bar_chart(
     ]
     if subtitle:
         parts.append(
-            f'<text x="{x + 18}" y="{y + 57}" class="small">{_svg_text(subtitle)}</text>'
+            f'<text x="{x + 18}" y="{y + 57}" class="small">'
+            f"{_svg_text(subtitle)}</text>"
         )
     for tick in range(tick_count + 1):
         fraction = tick / tick_count
@@ -1094,9 +1095,11 @@ def _svg_imbalance_panel(
         _svg_panel(x, y, width, height, "#f8fafc"),
         f'<text x="{x + 18}" y="{y + 38}" class="heading">Class Balance</text>',
         f'<text x="{x + 18}" y="{y + 70}" class="small">Rarest by pixels</text>',
-        f'<text x="{x + 18}" y="{y + 96}" class="body">{_svg_text(_truncate(rare_text, 82))}</text>',
+        f'<text x="{x + 18}" y="{y + 96}" class="body">'
+        f"{_svg_text(_truncate(rare_text, 82))}</text>",
         f'<text x="{x + 18}" y="{y + 126}" class="small">Largest by pixels</text>',
-        f'<text x="{x + 18}" y="{y + 152}" class="body">{_svg_text(_truncate(dominant_text, 82))}</text>',
+        f'<text x="{x + 18}" y="{y + 152}" class="body">'
+        f"{_svg_text(_truncate(dominant_text, 82))}</text>",
     ]
 
 

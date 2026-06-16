@@ -5,8 +5,6 @@ from xml.etree import ElementTree as ET
 import cv2
 import numpy as np
 import pytest
-from PIL import Image
-
 from databox.segmentation.cvat_xml_to_mmseg import (
     Config,
     config_from_args,
@@ -14,6 +12,7 @@ from databox.segmentation.cvat_xml_to_mmseg import (
     rasterize_image,
     validate_config,
 )
+from PIL import Image
 
 
 def _config(**kwargs):

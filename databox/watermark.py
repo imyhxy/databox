@@ -36,7 +36,7 @@ def watermark(fpath):
     fw = width / DEFAULT_WIDTH
     fh = height / DEFAULT_HEIGHT
     fontsize = max(10, int(FONTSIZE * fw))
-    loc = tuple(int(x * y) for x, y in zip(LOC, [fw, fh]))
+    loc = tuple(int(x * y) for x, y in zip(LOC, [fw, fh], strict=True))
 
     txt = Image.new("RGBA", img.size, (255, 255, 255, 0))
     fnt = get_font(fontsize)

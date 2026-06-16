@@ -2,6 +2,7 @@
 # File: split_yolo_dir.py
 # Date: 8/14/24
 """Split YOLO dataset into train and val set."""
+
 import argparse
 import os.path as osp
 import random

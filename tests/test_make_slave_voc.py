@@ -1,5 +1,4 @@
 import pytest
-
 from databox.segmentation.make_slave_voc import build_slave_voc_dataset, scene_key
 
 

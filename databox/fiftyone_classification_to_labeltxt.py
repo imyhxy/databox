@@ -2,6 +2,7 @@
 # File: fiftyone_classification_to_labeltxt.py
 # Date: 8/20/24
 """Convert a fiftyone classification dataset to a labeltxt file."""
+
 import argparse
 import os.path as osp
 from pathlib import Path
@@ -92,7 +93,7 @@ def main():
             name = f"split{idx}"
 
         with open(Path(args.input_dir) / f"{name}.txt", "w") as f:
-            f.write("\n".join(f"{x} {y}" for x, y in zip(*split)))
+            f.write("\n".join(f"{x} {y}" for x, y in zip(*split, strict=True)))
 
 
 if __name__ == "__main__":

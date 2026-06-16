@@ -1,8 +1,7 @@
 # Author: fkwong
 # File: imgdir_to_labeltxt.py
 # Date: 12/14/23
-"""
-Generates label text files (train.txt, val.txt) for image classification tasks
+"""Generates label text files (train.txt, val.txt) for image classification tasks
 from a directory of images organized by class.
 
 This script scans a directory where each subdirectory represents a class and
@@ -31,6 +30,7 @@ Outputs:
         val.txt
 Each line in the output files: <relative_image_path> <class_index>
 """
+
 import argparse
 import os.path as osp
 from glob import glob

@@ -2,6 +2,7 @@
 # File: split_voc_seg.py
 # Date: 11/5/24
 """Split VOC segmentation dataset into train and val sets."""
+
 import argparse
 import random
 from pathlib import Path

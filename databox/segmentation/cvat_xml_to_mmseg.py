@@ -400,7 +400,7 @@ def _write_labelmap(
     palette: list[tuple[int, int, int]],
 ) -> None:
     lines = ["# label:color_rgb:parts:actions"]
-    for label, color in zip(categories, palette):
+    for label, color in zip(categories, palette, strict=True):
         color_text = ",".join(str(channel) for channel in color)
         lines.append(f"{label}:{color_text}::")
     (output / "labelmap.txt").write_text("\n".join(lines) + "\n")

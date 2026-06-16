@@ -42,7 +42,9 @@ def main():
                         try:
                             label_idx = int(label)
                         except ValueError:
-                            raise ValueError(f"Label '{label}' is not a valid integer.")
+                            raise ValueError(
+                                f"Label '{label}' is not a valid integer."
+                            ) from None
                         if not (0 <= label_idx < len(args.categories)):
                             raise ValueError(
                                 f"Label index {label_idx} out of range for categories."

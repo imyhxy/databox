@@ -9,6 +9,7 @@ A VOC dataset must have the following files:
     - ImageSets
     - labelmap.txt
 """
+
 import argparse
 
 from datumaro import Dataset

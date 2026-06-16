@@ -2,6 +2,7 @@
 # File: cvat_to_folder.py
 # Date: 11/14/24
 """Convert CVAT dataset to folder structure."""
+
 import argparse
 
 import fiftyone as fo

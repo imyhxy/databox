@@ -28,7 +28,8 @@ def main():
 
     if not os.path.exists(args.input_dir):
         raise ValueError(
-            f"Input directory '{args.input_dir}' does not exist. Please provide a valid path."
+            f"Input directory '{args.input_dir}' does not exist. "
+            "Please provide a valid path."
         )
 
     # Load the dataset from the input directory

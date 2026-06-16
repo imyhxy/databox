@@ -39,7 +39,7 @@ def main():
         dataset_type=fot.FiftyOneDataset,
     )
 
-    for imgdir, tag in zip(args.image_directories, args.tags):
+    for imgdir, tag in zip(args.image_directories, args.tags, strict=True):
         dataset = fo.Dataset.from_dir(
             dataset_dir=imgdir,
             dataset_type=fot.ImageClassificationDirectoryTree,

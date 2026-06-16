@@ -2,6 +2,7 @@
 # File: merge_labeltxt.py
 # Date: 8/15/24
 """Merge "train.txt", "test.txt" and "val.txt" files from inputs."""
+
 import argparse
 import os.path as osp
 from math import sqrt

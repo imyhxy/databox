@@ -1,13 +1,12 @@
 from pathlib import Path
 from unittest import TestCase
 
-from PIL import Image
-
 from databox.nanobanana.resize_to_supported_resolution import (
     choose_target_resolution,
     load_supported_resolutions,
     resize_one,
 )
+from PIL import Image
 
 RESOLUTION_YAML = (
     Path(__file__).resolve().parents[1]

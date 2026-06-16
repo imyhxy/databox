@@ -15,6 +15,7 @@ The CVAT object have different attributes, e.g.:
     </box>
   </image>
 """
+
 import argparse
 import os.path as osp
 from collections import OrderedDict
@@ -126,7 +127,7 @@ def main():
             name = f"split{idx}"
 
         with open(out_dir / f"{name}.txt", "w") as f:
-            f.write("\n".join([f"{m} {n}" for m, n in zip(*split)]))
+            f.write("\n".join([f"{m} {n}" for m, n in zip(*split, strict=True)]))
 
 
 if __name__ == "__main__":

@@ -4,10 +4,9 @@
 import os.path as osp
 from glob import glob
 from itertools import chain
-from typing import List
 
 
-def search_images(root: str) -> List[str]:
+def search_images(root: str) -> list[str]:
     exts = {".jpg", ".png", ".jpeg"}
     return sorted(
         [

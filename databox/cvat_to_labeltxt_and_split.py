@@ -2,6 +2,7 @@
 # File: cvat_to_labeltxt_and_split.py
 # Date: 11/11/24
 """Convert annotation.xml into labeltxt format and split into train and val."""
+
 import argparse
 import os.path as osp
 import xml.etree.ElementTree as ET

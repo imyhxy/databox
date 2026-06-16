@@ -20,6 +20,7 @@ Target format:
             xxx.jpg
         annotations.xml
 """
+
 import argparse
 
 import fiftyone as fo

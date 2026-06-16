@@ -3,14 +3,13 @@ import xml.etree.ElementTree as ET
 
 import pytest
 import yaml
-from PIL import Image
-
 from databox.segmentation.mmseg_dataset_card import (
     analyze_dataset,
     compute_ocnet_weights,
     parse_labelmap,
     write_dataset_card,
 )
+from PIL import Image
 
 
 def _write_labelmap(path):

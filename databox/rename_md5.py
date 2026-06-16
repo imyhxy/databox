@@ -2,6 +2,7 @@
 # File: rename_md5.py
 # Date: 3/6/25
 """Rename files to their md5 hash."""
+
 import subprocess
 from argparse import ArgumentParser
 from pathlib import Path

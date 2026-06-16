@@ -2,6 +2,7 @@
 # File: resave_images.py
 # Date: 3/6/25
 """Open and save images to remove any metadata."""
+
 from argparse import ArgumentParser
 from pathlib import Path
 
