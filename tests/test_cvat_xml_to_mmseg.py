@@ -10,6 +10,7 @@ from databox.segmentation.cvat_xml_to_mmseg import (
     config_from_args,
     convert_cvat_xml_to_mmseg,
     rasterize_image,
+    rasterize_shape_branch,
     validate_config,
 )
 from PIL import Image
@@ -21,13 +22,15 @@ def _config(**kwargs):
         output=Path("out"),
         seed=0,
         train=0.8,
-        categories=["background", "object"],
+        categories=["background", "object", "line"],
         ignore_categories=[],
         ignore_index=255,
         ignore_palette=(128, 128, 128),
         polyline_width=5,
         strict_categories=False,
-        palette=[(0, 0, 0), (255, 255, 255)],
+        palette=[(0, 0, 0), (255, 255, 255), (0, 255, 0)],
+        polygon_categories=["object"],
+        polyline_categories=["line"],
     )
     config.update(kwargs)
     return Config(**config)
@@ -49,9 +52,15 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
   categories:
     - background
     - object
+    - line
+  polygon_categories:
+    - object
+  polyline_categories:
+    - line
   palette:
     - [0, 0, 0]
     - [255, 255, 255]
+    - [0, 255, 0]
   ignore_palette: [128, 128, 128]
 """
     )
@@ -71,8 +80,10 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
     assert config.output == Path("cli_out")
     assert config.seed == 7
     assert config.layout == "voc"
-    assert config.palette == [(0, 0, 0), (255, 255, 255)]
+    assert config.palette == [(0, 0, 0), (255, 255, 255), (0, 255, 0)]
     assert config.ignore_palette == (128, 128, 128)
+    assert config.polygon_categories == ["object"]
+    assert config.polyline_categories == ["line"]
 
 
 def test_cli_mode_requires_palette():
@@ -91,6 +102,8 @@ def test_cli_mode_requires_palette():
                 ignore_palette="128,128,128",
                 polyline_width=5,
                 strict_categories=False,
+                polygon_categories=["object"],
+                polyline_categories=["line"],
             )
         )
 
@@ -111,6 +124,8 @@ def test_cli_mode_requires_ignore_palette():
                 ignore_palette=None,
                 polyline_width=5,
                 strict_categories=False,
+                polygon_categories=["object"],
+                polyline_categories=["line"],
             )
         )
 
@@ -123,20 +138,77 @@ def test_cli_mode_parses_palette():
             output="out",
             seed=0,
             train=0.8,
-            categories=["background", "object"],
-            palette=["0,0,0", "255,255,255"],
+            categories=["background", "object", "line"],
+            palette=["0,0,0", "255,255,255", "0,255,0"],
             ignore_categories=[],
             ignore_index=255,
             ignore_palette="128,128,128",
             polyline_width=5,
             strict_categories=False,
             layout="voc",
+            polygon_categories=["object"],
+            polyline_categories=["line"],
         )
     )
 
-    assert config.palette == [(0, 0, 0), (255, 255, 255)]
+    assert config.palette == [(0, 0, 0), (255, 255, 255), (0, 255, 0)]
     assert config.ignore_palette == (128, 128, 128)
     assert config.layout == "voc"
+    assert config.polygon_categories == ["object"]
+    assert config.polyline_categories == ["line"]
+
+
+def test_cli_mode_requires_branch_categories():
+    with pytest.raises(ValueError, match="--polygon-categories"):
+        config_from_args(
+            SimpleNamespace(
+                yaml=False,
+                input="annotations.xml",
+                output="out",
+                seed=0,
+                train=0.8,
+                categories=["background", "object", "line"],
+                palette=["0,0,0", "255,255,255", "0,255,0"],
+                ignore_categories=[],
+                ignore_index=255,
+                ignore_palette="128,128,128",
+                polyline_width=5,
+                strict_categories=False,
+                layout="voc",
+                polygon_categories=None,
+                polyline_categories=["line"],
+            )
+        )
+
+
+def test_yaml_mode_requires_branch_categories(tmp_path):
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        """cvat_xml_to_mmseg:
+  seed: 7
+  categories:
+    - background
+    - object
+    - line
+  palette:
+    - [0, 0, 0]
+    - [255, 255, 255]
+    - [0, 255, 0]
+  ignore_palette: [128, 128, 128]
+"""
+    )
+
+    with pytest.raises(ValueError, match="polygon_categories"):
+        config_from_args(
+            SimpleNamespace(
+                yaml=True,
+                config=config_path,
+                param_name="cvat_xml_to_mmseg",
+                input="cli_annotations.xml",
+                output="cli_out",
+                palette=None,
+            )
+        )
 
 
 def test_polygon_fill_uses_category_index():
@@ -186,10 +258,90 @@ def test_ignore_label_writes_ignore_index_and_overrides_classes():
 
 
 def test_polyline_width_validation():
-    validate_config(_config(categories=["background", "line"], polyline_width=5))
+    validate_config(_config(polyline_width=5))
 
     with pytest.raises(ValueError, match="polyline_width"):
-        validate_config(_config(categories=["background", "line"], polyline_width=21))
+        validate_config(_config(polyline_width=21))
+
+
+def test_branch_category_validation():
+    with pytest.raises(ValueError, match="polygon_categories missing from categories"):
+        validate_config(_config(polygon_categories=["missing"]))
+
+    with pytest.raises(
+        ValueError, match="polygon_categories and polyline_categories overlap"
+    ):
+        validate_config(
+            _config(polygon_categories=["object"], polyline_categories=["object"])
+        )
+
+
+def test_polygon_branch_uses_one_based_branch_index():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="10" height="10">
+          <polygon label="late" points="1,1;5,1;5,5;1,5" />
+        </image>"""
+    )
+
+    mask = rasterize_shape_branch(
+        image,
+        "polygon",
+        ["late"],
+        [],
+    )
+
+    assert mask[3, 3] == 1
+
+
+def test_polyline_branch_uses_one_based_branch_index():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="10" height="10">
+          <polyline label="late_line" points="1,1;6,6" />
+        </image>"""
+    )
+
+    mask = rasterize_shape_branch(
+        image,
+        "polyline",
+        ["late_line"],
+        [],
+        polyline_width=3,
+    )
+
+    assert mask[3, 3] == 1
+
+
+def test_branch_masks_share_global_ignore_shapes():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="10" height="10">
+          <polygon label="object" points="1,1;8,1;8,8;1,8" />
+          <polyline label="line" points="1,8;8,1" />
+          <polygon label="ignore" points="2,2;4,2;4,4;2,4" />
+          <polyline label="ignore" points="6,1;6,8" />
+        </image>"""
+    )
+
+    polygon_mask = rasterize_shape_branch(
+        image,
+        "polygon",
+        ["object"],
+        ["ignore"],
+        ignore_index=255,
+        polyline_width=3,
+    )
+    polyline_mask = rasterize_shape_branch(
+        image,
+        "polyline",
+        ["line"],
+        ["ignore"],
+        ignore_index=255,
+        polyline_width=3,
+    )
+
+    assert polygon_mask[3, 3] == 255
+    assert polygon_mask[4, 6] == 255
+    assert polyline_mask[3, 3] == 255
+    assert polyline_mask[4, 6] == 255
 
 
 def test_unsupported_shape_raises():
@@ -216,6 +368,7 @@ def test_convert_writes_mmseg_layout(tmp_path):
               <labels>
                 <label><name>background</name></label>
                 <label><name>object</name></label>
+                <label><name>line</name></label>
               </labels>
             </task>
           </meta>
@@ -223,7 +376,7 @@ def test_convert_writes_mmseg_layout(tmp_path):
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
           <image id="1" name="two.jpg" width="8" height="8">
-            <polyline label="object" points="1,1;6,6" />
+            <polyline label="line" points="1,1;6,6" />
           </image>
         </annotations>"""
     )
@@ -234,16 +387,22 @@ def test_convert_writes_mmseg_layout(tmp_path):
             annotations=annotations,
             output=out,
             train=0.5,
-            categories=["background", "object"],
+            categories=["background", "object", "line"],
             polyline_width=3,
         )
     )
 
     copied_images = list((out / "images").glob("*"))
-    masks = list((out / "annotations").glob("*.png"))
+    masks = sorted(path.name for path in (out / "annotations").glob("*.png"))
     assert len(copied_images) == 2
-    assert len(masks) == 2
-    assert {p.stem for p in copied_images} == {p.stem for p in masks}
+    assert masks == [
+        "one.png",
+        "one_polygon.png",
+        "one_polyline.png",
+        "two.png",
+        "two_polygon.png",
+        "two_polyline.png",
+    ]
     assert set((out / "train.txt").read_text().splitlines()) | set(
         (out / "val.txt").read_text().splitlines()
     ) == {"one", "two"}
@@ -251,16 +410,23 @@ def test_convert_writes_mmseg_layout(tmp_path):
         "# label:color_rgb:parts:actions",
         "background:0,0,0::",
         "object:255,255,255::",
+        "line:0,255,0::",
     ]
     assert not (out / "test.txt").exists()
     assert not (out / "JPEGImages").exists()
     assert not (out / "SegmentationClass").exists()
     assert not (out / "ImageSets" / "Segmentation").exists()
-    with Image.open(masks[0]) as mask:
+    with Image.open(out / "annotations" / "one.png") as mask:
         assert mask.mode == "P"
         palette = mask.getpalette()
         assert palette[:6] == [0, 0, 0, 255, 255, 255]
         assert palette[255 * 3 : 255 * 3 + 3] == [128, 128, 128]
+    with Image.open(out / "annotations" / "one_polygon.png") as mask:
+        assert np.array(mask)[2, 2] == 1
+        assert mask.getpalette()[:6] == [0, 0, 0, 255, 255, 255]
+    with Image.open(out / "annotations" / "two_polyline.png") as mask:
+        assert np.array(mask)[3, 3] == 1
+        assert mask.getpalette()[:6] == [0, 0, 0, 0, 255, 0]
 
 
 def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
@@ -276,6 +442,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
               <labels>
                 <label><name>background</name></label>
                 <label><name>object</name></label>
+                <label><name>line</name></label>
                 <label><name>ignore</name></label>
               </labels>
             </task>
@@ -285,7 +452,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
             <polygon label="ignore" points="3,3;4,3;4,4;3,4" />
           </image>
           <image id="1" name="two.png" width="8" height="8">
-            <polyline label="object" points="1,1;6,6" />
+            <polyline label="line" points="1,1;6,6" />
           </image>
         </annotations>"""
     )
@@ -303,7 +470,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
             annotations=annotations,
             output=out,
             train=0.5,
-            categories=["background", "object"],
+            categories=["background", "object", "line"],
             ignore_categories=["ignore"],
             polyline_width=3,
             layout="voc",
@@ -311,9 +478,16 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
     )
 
     copied_images = sorted(path.name for path in (out / "JPEGImages").glob("*"))
-    masks = sorted((out / "SegmentationClass").glob("*.png"))
-    assert copied_images == ["one.jpg", "two.png"]
-    assert [path.name for path in masks] == ["one.png", "two.png"]
+    masks = sorted(path.name for path in (out / "SegmentationClass").glob("*.png"))
+    assert copied_images == ["one.jpg", "two.jpg"]
+    assert masks == [
+        "one.png",
+        "one_polygon.png",
+        "one_polyline.png",
+        "two.png",
+        "two_polygon.png",
+        "two_polyline.png",
+    ]
     assert set(
         (out / "ImageSets" / "Segmentation" / "train.txt").read_text().splitlines()
     ) | set(
@@ -326,6 +500,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
         "# label:color_rgb:parts:actions",
         "background:0,0,0::",
         "object:255,255,255::",
+        "line:0,255,0::",
     ]
     assert not (out / "images").exists()
     assert not (out / "annotations").exists()
@@ -340,6 +515,41 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
         assert values[3, 3] == 255
         assert palette[:6] == [0, 0, 0, 255, 255, 255]
         assert palette[255 * 3 : 255 * 3 + 3] == [128, 128, 128]
+    with Image.open(out / "SegmentationClass" / "one_polygon.png") as mask:
+        assert np.array(mask)[2, 2] == 1
+        assert np.array(mask)[3, 3] == 255
+    with Image.open(out / "SegmentationClass" / "one_polyline.png") as mask:
+        assert np.array(mask)[3, 3] == 255
+    with Image.open(out / "SegmentationClass" / "two_polyline.png") as mask:
+        assert np.array(mask)[3, 3] == 1
+        assert mask.getpalette()[:6] == [0, 0, 0, 0, 255, 0]
+
+
+def test_convert_rejects_branch_mask_name_collisions(tmp_path):
+    img1 = tmp_path / "one.jpg"
+    img2 = tmp_path / "one_polygon.jpg"
+    cv2.imwrite(str(img1), np.zeros((8, 8, 3), dtype=np.uint8))
+    cv2.imwrite(str(img2), np.zeros((8, 8, 3), dtype=np.uint8))
+    annotations = tmp_path / "annotations.xml"
+    annotations.write_text(
+        """<annotations>
+          <meta><task><labels>
+            <label><name>object</name></label>
+            <label><name>line</name></label>
+          </labels></task></meta>
+          <image id="0" name="one.jpg" width="8" height="8">
+            <polygon label="object" points="1,1;6,1;6,6;1,6" />
+          </image>
+          <image id="1" name="one_polygon.jpg" width="8" height="8">
+            <polygon label="object" points="1,1;6,1;6,6;1,6" />
+          </image>
+        </annotations>"""
+    )
+
+    with pytest.raises(ValueError, match="overwrite branch masks"):
+        convert_cvat_xml_to_mmseg(
+            _config(annotations=annotations, output=tmp_path / "prepared", train=0.5)
+        )
 
 
 def test_strict_categories_allows_background_not_in_cvat(tmp_path):
@@ -350,7 +560,10 @@ def test_strict_categories_allows_background_not_in_cvat(tmp_path):
     annotations = tmp_path / "annotations.xml"
     annotations.write_text(
         """<annotations>
-          <meta><task><labels><label><name>object</name></label></labels></task></meta>
+          <meta><task><labels>
+            <label><name>object</name></label>
+            <label><name>line</name></label>
+          </labels></task></meta>
           <image id="0" name="one.jpg" width="8" height="8">
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
@@ -365,7 +578,7 @@ def test_strict_categories_allows_background_not_in_cvat(tmp_path):
             annotations=annotations,
             output=tmp_path / "prepared",
             train=0.5,
-            categories=["background", "object"],
+            categories=["background", "object", "line"],
             strict_categories=True,
         )
     )
@@ -385,7 +598,10 @@ def test_strict_categories_rejects_extra_non_background_label(tmp_path):
     annotations = tmp_path / "annotations.xml"
     annotations.write_text(
         """<annotations>
-          <meta><task><labels><label><name>object</name></label></labels></task></meta>
+          <meta><task><labels>
+            <label><name>object</name></label>
+            <label><name>line</name></label>
+          </labels></task></meta>
           <image id="0" name="one.jpg" width="8" height="8">
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
@@ -401,7 +617,8 @@ def test_strict_categories_rejects_extra_non_background_label(tmp_path):
                 annotations=annotations,
                 output=tmp_path / "prepared",
                 train=0.5,
-                categories=["background", "object", "extra"],
+                categories=["background", "object", "line", "extra"],
+                palette=[(0, 0, 0), (255, 255, 255), (0, 255, 0), (255, 0, 0)],
                 strict_categories=True,
             )
         )

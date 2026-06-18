@@ -14,6 +14,10 @@ from PIL import Image, ImageDraw, ImageFont
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 SPLIT_FILE_STEMS = ("train", "val", "trainval", "test")
+BRANCH_MASK_SUFFIXES = {
+    "polygon": "_polygon",
+    "polyline": "_polyline",
+}
 OCNET_WEIGHT_SOURCE = (
     "https://github.com/openseg-group/OCNet.pytorch/issues/14#issuecomment-528144988"
 )
@@ -187,6 +191,8 @@ def analyze_dataset(
     class_ids = {item.id for item in classes}
     image_paths = _list_image_paths(layout.images_dir)
     mask_paths = _list_mask_paths(layout.masks_dir)
+    polygon_mask_paths = _list_branch_mask_paths(layout.masks_dir, "polygon")
+    polyline_mask_paths = _list_branch_mask_paths(layout.masks_dir, "polyline")
     image_stems = {path.stem for path in image_paths}
     mask_stems = {path.stem for path in mask_paths}
     split_stems = _read_split_stems(layout.split_dir)
@@ -239,6 +245,18 @@ def analyze_dataset(
                     split_image_counts[split_name][class_id] += 1
 
     weights = compute_ocnet_weights(pixel_counts)
+    polygon_stats = _analyze_branch_masks(
+        polygon_mask_paths,
+        classes,
+        ignore_index,
+        branch_name="polygon",
+    )
+    polyline_stats = _analyze_branch_masks(
+        polyline_mask_paths,
+        classes,
+        ignore_index,
+        branch_name="polyline",
+    )
     warnings = _make_warnings(
         classes=classes,
         image_stems=image_stems,
@@ -290,6 +308,10 @@ def analyze_dataset(
         ],
         "classes": class_rows,
         "class_weights_ocnet": class_weights,
+        "polygon_branch": polygon_stats,
+        "polyline_branch": polyline_stats,
+        "class_weights_ocnet_polygon": polygon_stats["class_weights_ocnet"],
+        "class_weights_ocnet_polyline": polyline_stats["class_weights_ocnet"],
         "split_stats": split_stats,
         "ignore_index": {
             "value": ignore_index,
@@ -384,6 +406,17 @@ def _read_mask_counts(mask_path: Path) -> tuple[Counter[int], tuple[int, int]]:
         return Counter({int(value): int(count) for count, value in colors}), image.size
 
 
+def _read_mask_palette(mask_path: Path) -> list[tuple[int, int, int]]:
+    with Image.open(mask_path) as image:
+        palette = image.getpalette()
+    if not palette:
+        return []
+    return [
+        tuple(palette[index : index + 3])
+        for index in range(0, min(len(palette), 768), 3)
+    ]
+
+
 def _list_image_paths(images_dir: Path) -> list[Path]:
     if not images_dir.exists():
         return []
@@ -400,8 +433,31 @@ def _list_mask_paths(masks_dir: Path) -> list[Path]:
     return sorted(
         path
         for path in masks_dir.iterdir()
-        if path.is_file() and path.suffix.lower() == ".png"
+        if (
+            path.is_file()
+            and path.suffix.lower() == ".png"
+            and not _is_branch_mask_path(path)
+        )
     )
+
+
+def _list_branch_mask_paths(masks_dir: Path, branch_name: str) -> list[Path]:
+    suffix = BRANCH_MASK_SUFFIXES[branch_name]
+    if not masks_dir.exists():
+        return []
+    return sorted(
+        path
+        for path in masks_dir.iterdir()
+        if (
+            path.is_file()
+            and path.suffix.lower() == ".png"
+            and path.stem.endswith(suffix)
+        )
+    )
+
+
+def _is_branch_mask_path(path: Path) -> bool:
+    return any(path.stem.endswith(suffix) for suffix in BRANCH_MASK_SUFFIXES.values())
 
 
 def _read_split_stems(split_dir: Path) -> dict[str, set[str]]:
@@ -465,6 +521,122 @@ def _make_warnings(
     if empty_classes:
         warnings.append(f"Classes with zero pixels: {', '.join(empty_classes)}")
     return warnings
+
+
+def _analyze_branch_masks(
+    mask_paths: list[Path],
+    labelmap_classes: list[ClassInfo],
+    ignore_index: int,
+    branch_name: str,
+) -> dict[str, Any]:
+    classes = _infer_branch_classes(mask_paths, labelmap_classes)
+    class_ids = {item.id for item in classes}
+    pixel_counts = {item.id: 0 for item in classes}
+    image_counts = {item.id: 0 for item in classes}
+    ignore_pixel_count = 0
+    ignore_image_count = 0
+    unknown_values: Counter[int] = Counter()
+    total_pixels = 0
+
+    for mask_path in mask_paths:
+        mask_counts, _ = _read_mask_counts(mask_path)
+        total_pixels += sum(mask_counts.values())
+        for value, count in mask_counts.items():
+            if value in class_ids:
+                pixel_counts[value] += count
+            elif value == ignore_index:
+                ignore_pixel_count += count
+            else:
+                unknown_values[value] += count
+        for class_id in class_ids:
+            if mask_counts.get(class_id, 0) > 0:
+                image_counts[class_id] += 1
+        if mask_counts.get(ignore_index, 0) > 0:
+            ignore_image_count += 1
+
+    weights = compute_ocnet_weights(pixel_counts)
+    class_rows = []
+    for item in classes:
+        pixel_count = pixel_counts[item.id]
+        image_count = image_counts[item.id]
+        class_rows.append(
+            {
+                "id": item.id,
+                "name": item.name,
+                "color_rgb": list(item.color_rgb),
+                "pixel_count": pixel_count,
+                "image_count": image_count,
+                "pixel_ratio": _ratio(pixel_count, total_pixels),
+                "image_ratio": _ratio(image_count, len(mask_paths)),
+                "class_weight_ocnet": _round_float(weights[item.id]),
+            }
+        )
+
+    return {
+        "name": branch_name,
+        "mask_count": len(mask_paths),
+        "total_pixels": total_pixels,
+        "classes": class_rows,
+        "class_weights_ocnet": _class_weights_flow_list(classes, weights),
+        "ignore_index": {
+            "value": ignore_index,
+            "pixel_count": ignore_pixel_count,
+            "image_count": ignore_image_count,
+            "pixel_ratio": _ratio(ignore_pixel_count, total_pixels),
+            "image_ratio": _ratio(ignore_image_count, len(mask_paths)),
+        },
+        "unknown_values": [
+            {"value": value, "pixel_count": count}
+            for value, count in sorted(unknown_values.items())
+        ],
+    }
+
+
+def _infer_branch_classes(
+    mask_paths: list[Path],
+    labelmap_classes: list[ClassInfo],
+) -> list[ClassInfo]:
+    if not labelmap_classes:
+        return []
+    if not mask_paths:
+        return [labelmap_classes[0]]
+
+    palette = _read_mask_palette(mask_paths[0])
+    if not palette:
+        max_value = 0
+        for mask_path in mask_paths:
+            mask_counts, _ = _read_mask_counts(mask_path)
+            values = [value for value in mask_counts if value != 255]
+            if values:
+                max_value = max(max_value, max(values))
+        return [
+            ClassInfo(
+                id=index,
+                name=labelmap_classes[0].name if index == 0 else f"class_{index}",
+                color_rgb=(0, 0, 0),
+            )
+            for index in range(max_value + 1)
+        ]
+
+    labels_by_color = {item.color_rgb: item.name for item in labelmap_classes}
+    classes = [
+        ClassInfo(
+            id=0,
+            name=labelmap_classes[0].name,
+            color_rgb=labelmap_classes[0].color_rgb,
+        )
+    ]
+    for index, color in enumerate(palette[1:], start=1):
+        if color == labelmap_classes[0].color_rgb:
+            break
+        classes.append(
+            ClassInfo(
+                id=index,
+                name=labels_by_color.get(color, f"class_{index}"),
+                color_rgb=color,
+            )
+        )
+    return classes
 
 
 def _build_split_stats(

@@ -7,6 +7,7 @@ from pathlib import Path
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 MASK_EXTENSIONS = {".png", ".bmp", ".tif", ".tiff"}
+BRANCH_MASK_SUFFIXES = ("_polygon", "_polyline")
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,9 +64,9 @@ def merge_datasets(input_roots: list[Path], output_root: Path) -> None:
     for input_root in input_roots:
         prefix = input_root.name
         image_paths = _collect_by_stem(input_root / "JPEGImages", IMAGE_EXTENSIONS)
-        mask_paths = _collect_by_stem(input_root / "SegmentationClass", MASK_EXTENSIONS)
         split_entries = _read_split_entries(input_root / "ImageSets" / "Segmentation")
         split_stems = {stem for stems in split_entries.values() for stem in stems}
+        mask_paths = _collect_masks(input_root / "SegmentationClass", split_stems)
 
         missing_images = sorted(split_stems - set(image_paths))
         missing_masks = sorted(split_stems - set(mask_paths))
@@ -81,17 +82,18 @@ def merge_datasets(input_roots: list[Path], output_root: Path) -> None:
             merged_stem = f"{prefix}__{stem}"
             if merged_stem in used_stems:
                 raise ValueError(f"Duplicate merged stem: {merged_stem}")
+            _check_merged_mask_name_collisions(merged_stem, used_stems)
             used_stems.add(merged_stem)
 
             shutil.copy2(
                 image_path,
                 output_images_dir / f"{merged_stem}{image_path.suffix}",
             )
-            mask_path = mask_paths[stem]
-            shutil.copy2(
-                mask_path,
-                output_masks_dir / f"{merged_stem}{mask_path.suffix}",
-            )
+            for suffix, mask_path in mask_paths[stem].items():
+                shutil.copy2(
+                    mask_path,
+                    output_masks_dir / f"{merged_stem}{suffix}{mask_path.suffix}",
+                )
 
         for split_name, stems in split_entries.items():
             merged_splits[split_name].extend(f"{prefix}__{stem}" for stem in stems)
@@ -137,6 +139,47 @@ def _collect_by_stem(root: Path, extensions: set[str]) -> dict[str, Path]:
             raise ValueError(f"Duplicate stem in {root}: {path.stem}")
         paths[path.stem] = path
     return paths
+
+
+def _collect_masks(root: Path, expected_stems: set[str]) -> dict[str, dict[str, Path]]:
+    grouped: dict[str, dict[str, Path]] = {}
+    used_paths: dict[Path, str] = {}
+    for stem in sorted(expected_stems):
+        grouped[stem] = {}
+        for suffix in ("", *BRANCH_MASK_SUFFIXES):
+            mask_path = root / f"{stem}{suffix}.png"
+            if not mask_path.exists():
+                raise ValueError(
+                    f"Missing branch masks for stem {stem}: {[mask_path.name]}"
+                )
+            if mask_path in used_paths:
+                raise ValueError(
+                    "Mask file would be reused for multiple stems: "
+                    f"{used_paths[mask_path]!r} and {stem!r} both need {mask_path.name!r}"
+                )
+            used_paths[mask_path] = stem
+            grouped[stem][suffix] = mask_path
+    return grouped
+
+
+def _check_merged_mask_name_collisions(merged_stem: str, used_stems: set[str]) -> None:
+    output_mask_names = {
+        f"{merged_stem}.png",
+        f"{merged_stem}_polygon.png",
+        f"{merged_stem}_polyline.png",
+    }
+    for used_stem in used_stems:
+        used_mask_names = {
+            f"{used_stem}.png",
+            f"{used_stem}_polygon.png",
+            f"{used_stem}_polyline.png",
+        }
+        overlap = sorted(output_mask_names & used_mask_names)
+        if overlap:
+            raise ValueError(
+                "Merged stems would overwrite masks: "
+                f"{used_stem!r} and {merged_stem!r} both write {overlap}"
+            )
 
 
 def _read_split_entries(split_dir: Path) -> dict[str, list[str]]:

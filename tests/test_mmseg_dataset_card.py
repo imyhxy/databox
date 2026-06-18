@@ -22,11 +22,14 @@ empty:0,255,0::
     )
 
 
-def _save_mask(path, values):
+def _save_mask(path, values, palette_values=None):
     image = Image.new("P", (len(values[0]), len(values)))
     image.putdata([value for row in values for value in row])
     palette = [0] * 768
-    palette[:9] = [0, 0, 0, 255, 0, 0, 0, 255, 0]
+    if palette_values is None:
+        palette_values = [(0, 0, 0), (255, 0, 0), (0, 255, 0)]
+    for index, color in enumerate(palette_values):
+        palette[index * 3 : index * 3 + 3] = list(color)
     palette[255 * 3 : 255 * 3 + 3] = [128, 128, 128]
     image.putpalette(palette)
     image.save(path)
@@ -41,6 +44,26 @@ def _make_dataset(tmp_path):
     Image.new("RGB", (2, 2)).save(root / "images" / "two.jpg")
     _save_mask(root / "annotations" / "one.png", [[0, 1], [1, 255]])
     _save_mask(root / "annotations" / "two.png", [[0, 0], [1, 7]])
+    _save_mask(
+        root / "annotations" / "one_polygon.png",
+        [[0, 1], [1, 255]],
+        [(0, 0, 0), (255, 0, 0)],
+    )
+    _save_mask(
+        root / "annotations" / "two_polygon.png",
+        [[0, 0], [1, 255]],
+        [(0, 0, 0), (255, 0, 0)],
+    )
+    _save_mask(
+        root / "annotations" / "one_polyline.png",
+        [[0, 1], [255, 255]],
+        [(0, 0, 0), (0, 255, 0)],
+    )
+    _save_mask(
+        root / "annotations" / "two_polyline.png",
+        [[0, 0], [1, 1]],
+        [(0, 0, 0), (0, 255, 0)],
+    )
     (root / "train.txt").write_text("one\n")
     (root / "val.txt").write_text("two\nmissing\n")
     return root
@@ -96,6 +119,19 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
     assert data["ignore_index"]["pixel_count"] == 1
     assert data["ignore_index"]["image_count"] == 1
     assert data["total_pixels"] == 8
+    assert data["mask_count"] == 2
+    assert data["polygon_branch"]["mask_count"] == 2
+    polygon_rows = {row["name"]: row for row in data["polygon_branch"]["classes"]}
+    assert polygon_rows["background"]["pixel_count"] == 3
+    assert polygon_rows["object"]["pixel_count"] == 3
+    assert data["polygon_branch"]["ignore_index"]["pixel_count"] == 2
+    assert data["class_weights_ocnet_polygon"] == [1.0, 1.0]
+    assert data["polyline_branch"]["mask_count"] == 2
+    polyline_rows = {row["name"]: row for row in data["polyline_branch"]["classes"]}
+    assert polyline_rows["background"]["pixel_count"] == 3
+    assert polyline_rows["empty"]["pixel_count"] == 3
+    assert data["polyline_branch"]["ignore_index"]["pixel_count"] == 2
+    assert data["class_weights_ocnet_polyline"] == [1.0, 1.0]
     assert data["splits"] == {"train": 1, "val": 2}
     assert data["split_stats"]["train"]["stem_count"] == 1
     assert data["split_stats"]["train"]["mask_count"] == 1
@@ -151,8 +187,10 @@ def test_analyze_dataset_reports_ambiguous_layout(tmp_path):
     root = _make_dataset(tmp_path)
     (root / "JPEGImages").mkdir()
     (root / "SegmentationClass").mkdir()
+    (root / "ImageSets" / "Segmentation").mkdir(parents=True)
     Image.new("RGB", (2, 2)).save(root / "JPEGImages" / "one.jpg")
     _save_mask(root / "SegmentationClass" / "one.png", [[0, 1], [1, 255]])
+    (root / "ImageSets" / "Segmentation" / "train.txt").write_text("one\n")
 
     with pytest.raises(ValueError, match="multiple layouts are present"):
         analyze_dataset(root)
@@ -201,6 +239,10 @@ def test_write_dataset_card_creates_yaml_and_svg(tmp_path):
     assert data["mask_count"] == 2
     yaml_text = card.yaml_path.read_text()
     assert "class_weights_ocnet: [1.5000, 1.5000, 0.0000]" in yaml_text
+    assert data["class_weights_ocnet_polygon"] == [1.0, 1.0]
+    assert data["class_weights_ocnet_polyline"] == [1.0, 1.0]
+    assert "class_weights_ocnet_polygon:" in yaml_text
+    assert "class_weights_ocnet_polyline:" in yaml_text
     assert "split_stats:" in yaml_text
     assert "train:" in yaml_text
     assert "val:" in yaml_text

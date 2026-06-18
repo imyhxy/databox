@@ -14,7 +14,7 @@ SPLITS = ("train", "val")
 class MasterItem:
     stem: str
     split: str
-    mask_path: Path
+    mask_paths: tuple[Path, ...]
 
 
 def scene_key(stem: str) -> str:
@@ -59,10 +59,15 @@ def build_master_index(master: Path) -> dict[str, MasterItem]:
                     f"{stem!r} in {split}"
                 )
 
-            mask_path = mask_dir / f"{stem}.png"
-            if not mask_path.exists():
-                raise FileNotFoundError(f"Master mask not found: {mask_path}")
-            index[key] = MasterItem(stem=stem, split=split, mask_path=mask_path)
+            mask_paths = (
+                mask_dir / f"{stem}.png",
+                mask_dir / f"{stem}_polygon.png",
+                mask_dir / f"{stem}_polyline.png",
+            )
+            for mask_path in mask_paths:
+                if not mask_path.exists():
+                    raise FileNotFoundError(f"Master mask not found: {mask_path}")
+            index[key] = MasterItem(stem=stem, split=split, mask_paths=mask_paths)
 
     return index
 
@@ -85,6 +90,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
 
     matched = []
     seen_output_stems = set()
+    seen_mask_names = {}
     for slave_image in iter_slave_images(slave_raw):
         item = master_index.get(scene_key(slave_image.stem))
         if item is None:
@@ -92,6 +98,18 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         if slave_image.stem in seen_output_stems:
             raise ValueError(f"Duplicate slave output stem: {slave_image.stem!r}")
         seen_output_stems.add(slave_image.stem)
+        for mask_name in (
+            f"{slave_image.stem}.png",
+            f"{slave_image.stem}_polygon.png",
+            f"{slave_image.stem}_polyline.png",
+        ):
+            if mask_name in seen_mask_names:
+                existing = seen_mask_names[mask_name]
+                raise ValueError(
+                    "Slave output stems would overwrite masks: "
+                    f"{existing!r} and {slave_image.stem!r} both write {mask_name!r}"
+                )
+            seen_mask_names[mask_name] = slave_image.stem
         matched.append((slave_image, item))
 
     if not matched:
@@ -111,7 +129,9 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
     for slave_image, item in matched:
         dst_stem = slave_image.stem
         shutil.copy2(slave_image, image_dir / f"{dst_stem}.jpg")
-        shutil.copy2(item.mask_path, mask_dir / f"{dst_stem}.png")
+        for mask_path in item.mask_paths:
+            suffix = mask_path.stem.removeprefix(item.stem)
+            shutil.copy2(mask_path, mask_dir / f"{dst_stem}{suffix}.png")
         split_stems[item.split].append(dst_stem)
 
     for split in SPLITS:

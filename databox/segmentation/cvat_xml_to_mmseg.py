@@ -33,6 +33,8 @@ class Config:
     polyline_width: int
     strict_categories: bool
     palette: list[tuple[int, int, int]]
+    polygon_categories: list[str]
+    polyline_categories: list[str]
     layout: str = "mmseg"
 
 
@@ -103,6 +105,20 @@ def parse_args():
         help="Polyline drawing width in pixels, from 1 to 20",
     )
     parser.add_argument(
+        "--polygon-categories",
+        type=str,
+        default=None,
+        nargs="+",
+        help="List of ordered polygon branch categories",
+    )
+    parser.add_argument(
+        "--polyline-categories",
+        type=str,
+        default=None,
+        nargs="+",
+        help="List of ordered polyline branch categories",
+    )
+    parser.add_argument(
         "--strict-categories",
         action="store_true",
         help="Reject configured categories that do not exist in CVAT labels, except background",
@@ -125,6 +141,8 @@ def config_from_args(args) -> Config:
         polyline_width = params.get("polyline_width", 5)
         strict_categories = params.get("strict_categories", False)
         palette = params.get("palette")
+        polygon_categories = params.get("polygon_categories")
+        polyline_categories = params.get("polyline_categories")
         layout = params.get("layout", getattr(args, "layout", "mmseg"))
     else:
         missing = [
@@ -135,6 +153,8 @@ def config_from_args(args) -> Config:
                 ("--categories", args.categories),
                 ("--palette", args.palette),
                 ("--ignore-palette", args.ignore_palette),
+                ("--polygon-categories", args.polygon_categories),
+                ("--polyline-categories", args.polyline_categories),
             )
             if value is None
         ]
@@ -151,7 +171,20 @@ def config_from_args(args) -> Config:
         polyline_width = args.polyline_width
         strict_categories = args.strict_categories
         palette = args.palette
+        polygon_categories = args.polygon_categories
+        polyline_categories = args.polyline_categories
         layout = getattr(args, "layout", "mmseg")
+
+    missing = [
+        name
+        for name, value in (
+            ("polygon_categories", polygon_categories),
+            ("polyline_categories", polyline_categories),
+        )
+        if value is None
+    ]
+    if missing:
+        raise ValueError(f"Missing required params: {', '.join(missing)}")
 
     return Config(
         annotations=Path(annotations),
@@ -165,6 +198,8 @@ def config_from_args(args) -> Config:
         polyline_width=int(polyline_width),
         strict_categories=bool(strict_categories),
         palette=parse_palette(palette),
+        polygon_categories=list(polygon_categories),
+        polyline_categories=list(polyline_categories),
         layout=str(layout),
     )
 
@@ -234,6 +269,44 @@ def validate_config(config: Config) -> None:
         raise ValueError(
             f"layout must be one of {sorted(LAYOUTS)}, got {config.layout}"
         )
+    _validate_branch_categories(
+        "polygon_categories",
+        config.polygon_categories,
+        config.categories,
+        config.ignore_categories,
+    )
+    _validate_branch_categories(
+        "polyline_categories",
+        config.polyline_categories,
+        config.categories,
+        config.ignore_categories,
+    )
+    branch_overlap = set(config.polygon_categories) & set(config.polyline_categories)
+    if branch_overlap:
+        raise ValueError(
+            "polygon_categories and polyline_categories overlap: "
+            f"{sorted(branch_overlap)}"
+        )
+
+
+def _validate_branch_categories(
+    name: str,
+    branch_categories: list[str],
+    categories: list[str],
+    ignore_categories: list[str],
+) -> None:
+    if not branch_categories:
+        raise ValueError(f"{name} must not be empty")
+    if len(branch_categories) > 254:
+        raise ValueError(f"{name} must contain no more than 254 labels")
+    if len(set(branch_categories)) != len(branch_categories):
+        raise ValueError(f"{name} must not contain duplicates")
+    missing = sorted(set(branch_categories) - set(categories))
+    if missing:
+        raise ValueError(f"{name} missing from categories: {missing}")
+    overlap = set(branch_categories) & set(ignore_categories)
+    if overlap:
+        raise ValueError(f"{name} and ignore_categories overlap: {sorted(overlap)}")
 
 
 def parse_points(points: str) -> np.ndarray:
@@ -318,17 +391,94 @@ def rasterize_image(
     return mask
 
 
+def rasterize_shape_branch(
+    image_element: ET.Element,
+    shape_tag: str,
+    branch_categories: list[str],
+    ignore_categories: list[str],
+    ignore_index: int = 255,
+    polyline_width: int = 5,
+) -> np.ndarray:
+    width = int(image_element.attrib["width"])
+    height = int(image_element.attrib["height"])
+    mask = np.zeros((height, width), dtype=np.uint8)
+
+    shapes = []
+    for order, child in enumerate(image_element):
+        if child.tag in SHAPE_TAGS and child.tag not in {"polygon", "polyline"}:
+            image_name = image_element.attrib["name"]
+            raise ValueError(
+                f"Unsupported CVAT shape '{child.tag}' in image {image_name}"
+            )
+        if child.tag not in {"polygon", "polyline"}:
+            continue
+        label = child.attrib["label"]
+        if label in branch_categories:
+            if child.tag != shape_tag:
+                continue
+            priority = branch_categories.index(label)
+        elif label in ignore_categories:
+            priority = len(branch_categories)
+        else:
+            continue
+        shapes.append((priority, order, child))
+
+    shapes.sort(key=lambda item: (item[0], item[1]))
+    for _, _, shape in shapes:
+        label = shape.attrib["label"]
+        value = (
+            ignore_index
+            if label in ignore_categories
+            else branch_categories.index(label) + 1
+        )
+        points = parse_points(shape.attrib["points"])
+        if shape.tag == "polygon":
+            if len(points) < 3:
+                raise ValueError(
+                    f"Polygon for label '{label}' must have at least 3 points"
+                )
+            cv2.fillPoly(mask, [points], int(value))
+        elif shape.tag == "polyline":
+            if len(points) < 2:
+                raise ValueError(
+                    f"Polyline for label '{label}' must have at least 2 points"
+                )
+            cv2.polylines(
+                mask,
+                [points],
+                isClosed=False,
+                color=int(value),
+                thickness=polyline_width,
+            )
+
+    return mask
+
+
 def _check_unique_mask_stems(images: list[ET.Element]) -> None:
-    seen = {}
+    seen_stems = {}
+    seen_mask_names = {}
     duplicates = []
+    mask_duplicates = []
     for image in images:
         stem = Path(image.attrib["name"]).stem
-        if stem in seen:
+        if stem in seen_stems:
             duplicates.append(stem)
-        seen[stem] = image.attrib["name"]
+        seen_stems[stem] = image.attrib["name"]
+        for mask_name in (
+            f"{stem}.png",
+            f"{stem}_polygon.png",
+            f"{stem}_polyline.png",
+        ):
+            if mask_name in seen_mask_names:
+                mask_duplicates.append(mask_name)
+            seen_mask_names[mask_name] = image.attrib["name"]
     if duplicates:
         raise ValueError(
             f"Duplicate image stems would overwrite masks: {sorted(duplicates)}"
+        )
+    if mask_duplicates:
+        raise ValueError(
+            f"Image stems would overwrite branch masks: {sorted(mask_duplicates)}"
         )
 
 
@@ -422,6 +572,15 @@ def save_palette_mask(
     image.save(path)
 
 
+def branch_palette(
+    branch_categories: list[str],
+    categories: list[str],
+    palette: list[tuple[int, int, int]],
+) -> list[tuple[int, int, int]]:
+    category_palette = dict(zip(categories, palette, strict=False))
+    return [palette[0], *[category_palette[label] for label in branch_categories]]
+
+
 def convert_cvat_xml_to_mmseg(config: Config) -> None:
     validate_config(config)
     tree = ET.parse(config.annotations)
@@ -460,6 +619,8 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
 
             dst_img = img_dir / (src.stem + ".jpg")
             dst_mask = ann_dir / f"{src.stem}.png"
+            dst_polygon_mask = ann_dir / f"{src.stem}_polygon.png"
+            dst_polyline_mask = ann_dir / f"{src.stem}_polyline.png"
             shutil.copy2(src, dst_img)
 
             mask = rasterize_image(
@@ -473,6 +634,44 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 mask,
                 dst_mask,
                 config.palette,
+                config.ignore_index,
+                config.ignore_palette,
+            )
+            polygon_mask = rasterize_shape_branch(
+                image,
+                "polygon",
+                config.polygon_categories,
+                config.ignore_categories,
+                ignore_index=config.ignore_index,
+                polyline_width=config.polyline_width,
+            )
+            save_palette_mask(
+                polygon_mask,
+                dst_polygon_mask,
+                branch_palette(
+                    config.polygon_categories,
+                    config.categories,
+                    config.palette,
+                ),
+                config.ignore_index,
+                config.ignore_palette,
+            )
+            polyline_mask = rasterize_shape_branch(
+                image,
+                "polyline",
+                config.polyline_categories,
+                config.ignore_categories,
+                ignore_index=config.ignore_index,
+                polyline_width=config.polyline_width,
+            )
+            save_palette_mask(
+                polyline_mask,
+                dst_polyline_mask,
+                branch_palette(
+                    config.polyline_categories,
+                    config.categories,
+                    config.palette,
+                ),
                 config.ignore_index,
                 config.ignore_palette,
             )
