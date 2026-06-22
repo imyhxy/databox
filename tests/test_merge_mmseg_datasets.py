@@ -64,3 +64,27 @@ def test_merge_datasets_rejects_branch_mask_name_collisions(tmp_path):
 
     with pytest.raises(ValueError, match="reused for multiple stems"):
         merge_datasets([dataset], tmp_path / "merged")
+
+
+def test_merge_datasets_uses_explicit_prefixes(tmp_path):
+    first = _make_dataset(tmp_path / "first_parent", "shadow", stems=("one",))
+    second = _make_dataset(tmp_path / "second_parent", "shadow", stems=("two",))
+    output = tmp_path / "merged"
+
+    merge_datasets([first, second], output, ["street_map", "proprietary"])
+
+    split = output / "ImageSets" / "Segmentation" / "train.txt"
+    assert split.read_text().splitlines() == ["street_map__one", "proprietary__two"]
+
+
+def test_merge_datasets_requires_one_unique_prefix_per_input(tmp_path):
+    first = _make_dataset(tmp_path / "first_parent", "shadow", stems=("one",))
+    second = _make_dataset(tmp_path / "second_parent", "shadow", stems=("two",))
+
+    with pytest.raises(ValueError, match="exactly one value per input"):
+        merge_datasets([first, second], tmp_path / "merged", ["street_map"])
+
+    with pytest.raises(ValueError, match="prefixes must be unique"):
+        merge_datasets(
+            [first, second], tmp_path / "merged", ["shadow", "shadow"]
+        )

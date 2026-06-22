@@ -101,6 +101,7 @@ def test_analyze_dataset_counts_pixels_images_ignore_and_warnings(tmp_path):
 
     data = analyze_dataset(root)
 
+    assert "generated_at" not in data
     rows = {row["name"]: row for row in data["classes"]}
     assert rows["background"]["pixel_count"] == 3
     assert rows["background"]["image_count"] == 2

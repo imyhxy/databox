@@ -30,20 +30,41 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Output dataset root.",
     )
+    parser.add_argument(
+        "--prefixes",
+        nargs="+",
+        help=(
+            "Output stem prefix for each input, in the same order as --inputs. "
+            "Defaults to each input directory name."
+        ),
+    )
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
-    merge_datasets(args.inputs, args.output)
+    merge_datasets(args.inputs, args.output, args.prefixes)
 
 
-def merge_datasets(input_roots: list[Path], output_root: Path) -> None:
+def merge_datasets(
+    input_roots: list[Path],
+    output_root: Path,
+    prefixes: list[str] | None = None,
+) -> None:
     input_roots = [path.resolve() for path in input_roots]
     output_root = output_root.resolve()
+    prefixes = prefixes or [path.name for path in input_roots]
 
     if output_root in input_roots:
         raise ValueError("Output root must not be one of the input roots")
+    if len(prefixes) != len(input_roots):
+        raise ValueError("--prefixes must contain exactly one value per input")
+    if len(set(prefixes)) != len(prefixes):
+        raise ValueError(f"Input prefixes must be unique: {prefixes}")
+    if any(not prefix or Path(prefix).name != prefix for prefix in prefixes):
+        raise ValueError(
+            f"Input prefixes must be non-empty file-name components: {prefixes}"
+        )
 
     _validate_inputs(input_roots)
     labelmap = _read_common_labelmap(input_roots)
@@ -61,8 +82,7 @@ def merge_datasets(input_roots: list[Path], output_root: Path) -> None:
     merged_splits: dict[str, list[str]] = defaultdict(list)
     used_stems: set[str] = set()
 
-    for input_root in input_roots:
-        prefix = input_root.name
+    for input_root, prefix in zip(input_roots, prefixes, strict=True):
         image_paths = _collect_by_stem(input_root / "JPEGImages", IMAGE_EXTENSIONS)
         split_entries = _read_split_entries(input_root / "ImageSets" / "Segmentation")
         split_stems = {stem for stems in split_entries.values() for stem in stems}

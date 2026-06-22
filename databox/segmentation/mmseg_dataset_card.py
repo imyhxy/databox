@@ -5,7 +5,6 @@ import html
 import math
 from collections import Counter
 from dataclasses import dataclass
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -297,7 +296,6 @@ def analyze_dataset(
     data = {
         "dataset_root": str(dataset_root),
         "layout": layout.name,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
         "image_count": len(image_paths),
         "mask_count": len(mask_paths),
         "total_pixels": total_pixels,
