@@ -8,6 +8,7 @@ from pathlib import Path
 
 BRIGHTNESS_SUFFIX = re.compile(r"_0G_\d{3}$")
 SPLITS = ("train", "val")
+POLYLINE_ANNOTATION_SUFFIX = "_polyline.txt"
 
 
 @dataclass(frozen=True)
@@ -63,10 +64,13 @@ def build_master_index(master: Path) -> dict[str, MasterItem]:
                 mask_dir / f"{stem}.png",
                 mask_dir / f"{stem}_polygon.png",
                 mask_dir / f"{stem}_polyline.png",
+                mask_dir / f"{stem}{POLYLINE_ANNOTATION_SUFFIX}",
             )
             for mask_path in mask_paths:
                 if not mask_path.exists():
-                    raise FileNotFoundError(f"Master mask not found: {mask_path}")
+                    raise FileNotFoundError(
+                        f"Master segmentation file not found: {mask_path}"
+                    )
             index[key] = MasterItem(stem=stem, split=split, mask_paths=mask_paths)
 
     return index
@@ -102,6 +106,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
             f"{slave_image.stem}.png",
             f"{slave_image.stem}_polygon.png",
             f"{slave_image.stem}_polyline.png",
+            f"{slave_image.stem}{POLYLINE_ANNOTATION_SUFFIX}",
         ):
             if mask_name in seen_mask_names:
                 existing = seen_mask_names[mask_name]
@@ -131,7 +136,10 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         shutil.copy2(slave_image, image_dir / f"{dst_stem}.jpg")
         for mask_path in item.mask_paths:
             suffix = mask_path.stem.removeprefix(item.stem)
-            shutil.copy2(mask_path, mask_dir / f"{dst_stem}{suffix}.png")
+            if mask_path.suffix == ".txt":
+                shutil.copy2(mask_path, mask_dir / f"{dst_stem}{suffix}.txt")
+            else:
+                shutil.copy2(mask_path, mask_dir / f"{dst_stem}{suffix}.png")
         split_stems[item.split].append(dst_stem)
 
     for split in SPLITS:

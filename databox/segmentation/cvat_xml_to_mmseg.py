@@ -319,6 +319,44 @@ def parse_points(points: str) -> np.ndarray:
     return np.rint(np.array(parsed, dtype=np.float32)).astype(np.int32)
 
 
+def parse_float_points(points: str) -> list[tuple[float, float]]:
+    parsed = []
+    for point in points.split(";"):
+        xy = point.split(",")
+        if len(xy) != 2:
+            raise ValueError(f"Invalid CVAT point: {point}")
+        parsed.append((float(xy[0]), float(xy[1])))
+    return parsed
+
+
+def format_float(value: float) -> str:
+    return f"{value:.6f}".rstrip("0").rstrip(".")
+
+
+def polyline_annotation_lines(
+    image_element: ET.Element,
+    categories: list[str],
+    polyline_categories: list[str],
+) -> list[str]:
+    lines = []
+    for child in image_element:
+        if child.tag != "polyline":
+            continue
+        label = child.attrib["label"]
+        if label not in polyline_categories:
+            continue
+        points = parse_float_points(child.attrib["points"])
+        if len(points) < 2:
+            raise ValueError(
+                f"Polyline for label '{label}' must have at least 2 points"
+            )
+        values = [str(categories.index(label))]
+        for x, y in points:
+            values.extend((format_float(x), format_float(y)))
+        lines.append(" ".join(values))
+    return lines
+
+
 def image_path(image_element: ET.Element, annotations_path: Path) -> Path:
     path = Path(image_element.attrib["name"])
     if path.is_absolute():
@@ -621,6 +659,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
             dst_mask = ann_dir / f"{src.stem}.png"
             dst_polygon_mask = ann_dir / f"{src.stem}_polygon.png"
             dst_polyline_mask = ann_dir / f"{src.stem}_polyline.png"
+            dst_polyline_txt = ann_dir / f"{src.stem}_polyline.txt"
             shutil.copy2(src, dst_img)
 
             mask = rasterize_image(
@@ -675,6 +714,15 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 config.ignore_index,
                 config.ignore_palette,
             )
+            polyline_lines = polyline_annotation_lines(
+                image,
+                config.categories,
+                config.polyline_categories,
+            )
+            text = "\n".join(polyline_lines)
+            if text:
+                text += "\n"
+            dst_polyline_txt.write_text(text)
 
 
 def main():

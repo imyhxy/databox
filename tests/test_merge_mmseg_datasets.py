@@ -17,6 +17,9 @@ def _make_dataset(root, name, stems=("one",)):
         (dataset / "SegmentationClass" / f"{stem}_polyline.png").write_text(
             f"polyline-{stem}"
         )
+        (dataset / "SegmentationClass" / f"{stem}_polyline.txt").write_text(
+            f"2 1.25 1.5 6.75 6.125 {stem}\n"
+        )
     (dataset / "ImageSets" / "Segmentation" / "train.txt").write_text(
         "".join(f"{stem}\n" for stem in stems)
     )
@@ -37,6 +40,9 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
     assert (
         output / "SegmentationClass" / "first__one_polyline.png"
     ).read_text() == "polyline-one"
+    assert (
+        output / "SegmentationClass" / "first__one_polyline.txt"
+    ).read_text() == "2 1.25 1.5 6.75 6.125 one\n"
     assert (output / "SegmentationClass" / "second__two.png").read_text() == (
         "mask-two"
     )
@@ -47,6 +53,9 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
         output / "SegmentationClass" / "second__two_polyline.png"
     ).read_text() == "polyline-two"
     assert (
+        output / "SegmentationClass" / "second__two_polyline.txt"
+    ).read_text() == "2 1.25 1.5 6.75 6.125 two\n"
+    assert (
         output / "ImageSets" / "Segmentation" / "train.txt"
     ).read_text().splitlines() == ["first__one", "second__two"]
 
@@ -56,6 +65,14 @@ def test_merge_datasets_requires_branch_masks(tmp_path):
     (dataset / "SegmentationClass" / "one_polygon.png").unlink()
 
     with pytest.raises(ValueError, match="Missing branch masks"):
+        merge_datasets([dataset], tmp_path / "merged")
+
+
+def test_merge_datasets_requires_polyline_annotations(tmp_path):
+    dataset = _make_dataset(tmp_path, "dataset", stems=("one",))
+    (dataset / "SegmentationClass" / "one_polyline.txt").unlink()
+
+    with pytest.raises(ValueError, match="polyline annotations"):
         merge_datasets([dataset], tmp_path / "merged")
 
 
@@ -85,6 +102,4 @@ def test_merge_datasets_requires_one_unique_prefix_per_input(tmp_path):
         merge_datasets([first, second], tmp_path / "merged", ["street_map"])
 
     with pytest.raises(ValueError, match="prefixes must be unique"):
-        merge_datasets(
-            [first, second], tmp_path / "merged", ["shadow", "shadow"]
-        )
+        merge_datasets([first, second], tmp_path / "merged", ["shadow", "shadow"])

@@ -9,6 +9,7 @@ from databox.segmentation.cvat_xml_to_mmseg import (
     Config,
     config_from_args,
     convert_cvat_xml_to_mmseg,
+    polyline_annotation_lines,
     rasterize_image,
     rasterize_shape_branch,
     validate_config,
@@ -311,6 +312,23 @@ def test_polyline_branch_uses_one_based_branch_index():
     assert mask[3, 3] == 1
 
 
+def test_polyline_annotation_lines_keep_original_float_points():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="10" height="10">
+          <polyline label="line" points="1.25,1.5;6.75,6.125" />
+          <polyline label="ignored_line" points="0,0;1,1" />
+        </image>"""
+    )
+
+    lines = polyline_annotation_lines(
+        image,
+        ["background", "object", "line", "ignored_line"],
+        ["line"],
+    )
+
+    assert lines == ["2 1.25 1.5 6.75 6.125"]
+
+
 def test_branch_masks_share_global_ignore_shapes():
     image = _image(
         """<image id="0" name="foo.jpg" width="10" height="10">
@@ -376,7 +394,7 @@ def test_convert_writes_mmseg_layout(tmp_path):
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
           <image id="1" name="two.jpg" width="8" height="8">
-            <polyline label="line" points="1,1;6,6" />
+            <polyline label="line" points="1.25,1.5;6.75,6.125" />
           </image>
         </annotations>"""
     )
@@ -394,6 +412,7 @@ def test_convert_writes_mmseg_layout(tmp_path):
 
     copied_images = list((out / "images").glob("*"))
     masks = sorted(path.name for path in (out / "annotations").glob("*.png"))
+    polyline_txts = sorted(path.name for path in (out / "annotations").glob("*.txt"))
     assert len(copied_images) == 2
     assert masks == [
         "one.png",
@@ -403,6 +422,11 @@ def test_convert_writes_mmseg_layout(tmp_path):
         "two_polygon.png",
         "two_polyline.png",
     ]
+    assert polyline_txts == ["one_polyline.txt", "two_polyline.txt"]
+    assert (out / "annotations" / "one_polyline.txt").read_text() == ""
+    assert (
+        out / "annotations" / "two_polyline.txt"
+    ).read_text() == "2 1.25 1.5 6.75 6.125\n"
     assert set((out / "train.txt").read_text().splitlines()) | set(
         (out / "val.txt").read_text().splitlines()
     ) == {"one", "two"}
@@ -452,7 +476,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
             <polygon label="ignore" points="3,3;4,3;4,4;3,4" />
           </image>
           <image id="1" name="two.png" width="8" height="8">
-            <polyline label="line" points="1,1;6,6" />
+            <polyline label="line" points="1.25,1.5;6.75,6.125" />
           </image>
         </annotations>"""
     )
@@ -479,6 +503,9 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
 
     copied_images = sorted(path.name for path in (out / "JPEGImages").glob("*"))
     masks = sorted(path.name for path in (out / "SegmentationClass").glob("*.png"))
+    polyline_txts = sorted(
+        path.name for path in (out / "SegmentationClass").glob("*.txt")
+    )
     assert copied_images == ["one.jpg", "two.jpg"]
     assert masks == [
         "one.png",
@@ -488,6 +515,11 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
         "two_polygon.png",
         "two_polyline.png",
     ]
+    assert polyline_txts == ["one_polyline.txt", "two_polyline.txt"]
+    assert (out / "SegmentationClass" / "one_polyline.txt").read_text() == ""
+    assert (
+        out / "SegmentationClass" / "two_polyline.txt"
+    ).read_text() == "2 1.25 1.5 6.75 6.125\n"
     assert set(
         (out / "ImageSets" / "Segmentation" / "train.txt").read_text().splitlines()
     ) | set(
