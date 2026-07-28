@@ -1,6 +1,7 @@
 import os
 
 import pytest
+from databox.segmentation.dataset_manifest import read_manifest, write_manifest
 from databox.segmentation.mmseg_to_ultralytics import build_ultralytics_dataset
 from PIL import Image
 
@@ -18,8 +19,34 @@ def _make_dataset(root):
     (image_dir / "bar.jpeg").write_text("image-bar")
     _write_palette_mask(mask_dir / "foo.png", [0, 1, 2, 255])
     _write_palette_mask(mask_dir / "bar.png", [3, 4, 5, 6])
+    _write_palette_mask(mask_dir / "foo_polygon.png", [0, 1, 0, 255])
+    _write_palette_mask(mask_dir / "bar_polygon.png", [0, 2, 0, 255])
+    _write_palette_mask(mask_dir / "foo_polyline.png", [0, 3, 0, 255])
+    _write_palette_mask(mask_dir / "bar_polyline.png", [0, 4, 0, 255])
     (split_dir / "train.txt").write_text("foo\n")
     (split_dir / "val.txt").write_text("bar\n")
+    write_manifest(
+        dataset,
+        [
+            {
+                "sample_id": f"cvat:12:21:{frame_id}",
+                "task_name": "task",
+                "split": split,
+                "image_name": image_name,
+                "image_path": f"JPEGImages/{image_name}",
+                "gt_mask_path": f"SegmentationClass/{stem}.png",
+                "polygon_mask_path": f"SegmentationClass/{stem}_polygon.png",
+                "polyline_mask_path": f"SegmentationClass/{stem}_polyline.png",
+                "task_id": 12,
+                "job_id": 21,
+                "frame_id": frame_id,
+            }
+            for frame_id, stem, image_name, split in (
+                (1, "foo", "foo.jpg", "train"),
+                (2, "bar", "bar.jpeg", "val"),
+            )
+        ],
+    )
     return dataset
 
 
@@ -54,6 +81,18 @@ def test_build_ultralytics_dataset_converts_palette_masks_to_l_mode(tmp_path):
     with Image.open(output / "labels" / "foo.png") as image:
         assert image.mode == "L"
         assert list(image.getdata()) == [0, 1, 2, 255]
+    with Image.open(output / "polygon_masks" / "foo.png") as image:
+        assert image.mode == "L"
+        assert list(image.getdata()) == [0, 1, 0, 255]
+    with Image.open(output / "polyline_masks" / "foo.png") as image:
+        assert image.mode == "L"
+        assert list(image.getdata()) == [0, 3, 0, 255]
+
+    manifest = read_manifest(output)
+    assert manifest[0]["image_path"] == "images/foo.jpg"
+    assert manifest[0]["gt_mask_path"] == "labels/foo.png"
+    assert manifest[0]["polygon_mask_path"] == "polygon_masks/foo.png"
+    assert manifest[0]["polyline_mask_path"] == "polyline_masks/foo.png"
 
 
 def test_build_ultralytics_dataset_rejects_missing_image(tmp_path):

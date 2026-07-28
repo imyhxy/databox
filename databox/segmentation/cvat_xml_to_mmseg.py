@@ -15,6 +15,14 @@ import numpy as np
 import yaml
 from PIL import Image
 
+try:
+    from databox.segmentation.dataset_manifest import (
+        MANIFEST_FILENAME,
+        write_manifest,
+    )
+except ModuleNotFoundError:
+    from dataset_manifest import MANIFEST_FILENAME, write_manifest
+
 PARAM_NAME = "cvat_xml_to_mmseg"
 LAYOUTS = {"mmseg", "voc"}
 SHAPE_TAGS = {"polygon", "polyline", "box", "ellipse", "mask", "points", "skeleton"}
@@ -36,6 +44,13 @@ class Config:
     polygon_categories: list[str]
     polyline_categories: list[str]
     layout: str = "mmseg"
+
+
+@dataclass(frozen=True)
+class CvatTaskMetadata:
+    task_id: int
+    task_name: str
+    segments: tuple[tuple[int, int, int], ...]
 
 
 def parse_args():
@@ -531,7 +546,7 @@ def clean_output(output: Path) -> None:
     image_sets = output / "ImageSets"
     if image_sets.exists() and not any(image_sets.iterdir()):
         image_sets.rmdir()
-    for filename in ("train.txt", "val.txt", "labelmap.txt"):
+    for filename in ("train.txt", "val.txt", "labelmap.txt", MANIFEST_FILENAME):
         path = output / filename
         if path.exists():
             path.unlink()
@@ -619,6 +634,71 @@ def branch_palette(
     return [palette[0], *[category_palette[label] for label in branch_categories]]
 
 
+def parse_cvat_task_metadata(root: ET.Element) -> CvatTaskMetadata:
+    task = root.find("./meta/task")
+    if task is None:
+        raise ValueError("CVAT metadata missing <meta><task>")
+
+    task_id = _required_int_text(task, "id", "CVAT task id")
+    task_name = task.findtext("name")
+    if task_name is None or not task_name.strip():
+        raise ValueError("CVAT metadata missing task name")
+
+    segments = []
+    for segment in task.findall("./segments/segment"):
+        job_id = _required_int_text(segment, "id", "CVAT segment/job id")
+        start = _required_int_text(segment, "start", f"CVAT job {job_id} start")
+        stop = _required_int_text(segment, "stop", f"CVAT job {job_id} stop")
+        if start > stop:
+            raise ValueError(
+                f"CVAT job {job_id} has invalid frame range: {start} > {stop}"
+            )
+        segments.append((start, stop, job_id))
+    if not segments:
+        raise ValueError("CVAT metadata contains no task segments/jobs")
+
+    segments.sort()
+    for previous, current in zip(segments, segments[1:], strict=False):
+        if current[0] <= previous[1]:
+            raise ValueError(
+                "CVAT task segments overlap: "
+                f"job {previous[2]} [{previous[0]}, {previous[1]}] and "
+                f"job {current[2]} [{current[0]}, {current[1]}]"
+            )
+    job_ids = [segment[2] for segment in segments]
+    if len(set(job_ids)) != len(job_ids):
+        raise ValueError(f"CVAT metadata contains duplicate job IDs: {job_ids}")
+
+    return CvatTaskMetadata(
+        task_id=task_id,
+        task_name=task_name.strip(),
+        segments=tuple(segments),
+    )
+
+
+def _required_int_text(element: ET.Element, tag: str, label: str) -> int:
+    value = element.findtext(tag)
+    if value is None:
+        raise ValueError(f"CVAT metadata missing {label}")
+    try:
+        return int(value)
+    except ValueError as exc:
+        raise ValueError(f"CVAT metadata has invalid {label}: {value!r}") from exc
+
+
+def job_id_for_frame(metadata: CvatTaskMetadata, frame_id: int) -> int:
+    matches = [
+        job_id
+        for start, stop, job_id in metadata.segments
+        if start <= frame_id <= stop
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            f"CVAT frame {frame_id} must map to exactly one job, got {matches}"
+        )
+    return matches[0]
+
+
 def convert_cvat_xml_to_mmseg(config: Config) -> None:
     validate_config(config)
     tree = ET.parse(config.annotations)
@@ -638,6 +718,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
     if not images:
         raise ValueError(f"No images found in {config.annotations}")
     _check_unique_mask_stems(images)
+    task_metadata = parse_cvat_task_metadata(root)
 
     splits = make_splits(images, config)
     clean_output(config.output)
@@ -649,12 +730,20 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
     img_dir.mkdir(parents=True, exist_ok=True)
     ann_dir.mkdir(parents=True, exist_ok=True)
 
-    for split_images in splits.values():
+    manifest_records = []
+    for split_name, split_images in splits.items():
         for image in split_images:
             src = image_path(image, config.annotations)
             if not src.exists():
                 raise FileNotFoundError(f"Image not found: {src}")
 
+            try:
+                frame_id = int(image.attrib["id"])
+            except (KeyError, ValueError) as exc:
+                raise ValueError(
+                    f"CVAT image has invalid frame id: {image.attrib.get('id')!r}"
+                ) from exc
+            job_id = job_id_for_frame(task_metadata, frame_id)
             dst_img = img_dir / (src.stem + ".jpg")
             dst_mask = ann_dir / f"{src.stem}.png"
             dst_polygon_mask = ann_dir / f"{src.stem}_polygon.png"
@@ -723,6 +812,30 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
             if text:
                 text += "\n"
             dst_polyline_txt.write_text(text)
+
+            manifest_records.append(
+                {
+                    "sample_id": (
+                        f"cvat:{task_metadata.task_id}:{job_id}:{frame_id}"
+                    ),
+                    "task_name": task_metadata.task_name,
+                    "split": split_name,
+                    "image_name": dst_img.name,
+                    "image_path": dst_img.relative_to(config.output).as_posix(),
+                    "gt_mask_path": dst_mask.relative_to(config.output).as_posix(),
+                    "polygon_mask_path": dst_polygon_mask.relative_to(
+                        config.output
+                    ).as_posix(),
+                    "polyline_mask_path": dst_polyline_mask.relative_to(
+                        config.output
+                    ).as_posix(),
+                    "task_id": task_metadata.task_id,
+                    "job_id": job_id,
+                    "frame_id": frame_id,
+                }
+            )
+
+    write_manifest(config.output, manifest_records)
 
 
 def main():

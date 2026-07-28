@@ -9,11 +9,14 @@ from databox.segmentation.cvat_xml_to_mmseg import (
     Config,
     config_from_args,
     convert_cvat_xml_to_mmseg,
+    job_id_for_frame,
+    parse_cvat_task_metadata,
     polyline_annotation_lines,
     rasterize_image,
     rasterize_shape_branch,
     validate_config,
 )
+from databox.segmentation.dataset_manifest import read_manifest
 from PIL import Image
 
 
@@ -39,6 +42,53 @@ def _config(**kwargs):
 
 def _image(xml: str):
     return ET.fromstring(xml)
+
+
+def _write_annotations(path: Path, xml_text: str) -> None:
+    metadata = """<task>
+              <id>104</id>
+              <name>batch_260618</name>
+              <segments>
+                <segment><id>208</id><start>0</start><stop>0</stop></segment>
+                <segment><id>209</id><start>1</start><stop>999</stop></segment>
+              </segments>"""
+    path.write_text(xml_text.replace("<task>", metadata, 1))
+
+
+def test_parse_cvat_task_metadata_maps_segment_boundaries():
+    root = ET.fromstring(
+        """<annotations><meta><task>
+          <id>104</id><name>batch_260618</name>
+          <segments>
+            <segment><id>208</id><start>0</start><stop>315</stop></segment>
+            <segment><id>209</id><start>316</start><stop>500</stop></segment>
+          </segments>
+        </task></meta></annotations>"""
+    )
+
+    metadata = parse_cvat_task_metadata(root)
+
+    assert metadata.task_id == 104
+    assert metadata.task_name == "batch_260618"
+    assert job_id_for_frame(metadata, 315) == 208
+    assert job_id_for_frame(metadata, 316) == 209
+    with pytest.raises(ValueError, match="exactly one job"):
+        job_id_for_frame(metadata, 501)
+
+
+def test_parse_cvat_task_metadata_rejects_overlapping_segments():
+    root = ET.fromstring(
+        """<annotations><meta><task>
+          <id>104</id><name>batch</name>
+          <segments>
+            <segment><id>208</id><start>0</start><stop>10</stop></segment>
+            <segment><id>209</id><start>10</start><stop>20</stop></segment>
+          </segments>
+        </task></meta></annotations>"""
+    )
+
+    with pytest.raises(ValueError, match="segments overlap"):
+        parse_cvat_task_metadata(root)
 
 
 def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
@@ -379,7 +429,8 @@ def test_convert_writes_mmseg_layout(tmp_path):
     cv2.imwrite(str(img1), np.zeros((8, 8, 3), dtype=np.uint8))
     cv2.imwrite(str(img2), np.zeros((8, 8, 3), dtype=np.uint8))
     annotations = tmp_path / "annotations.xml"
-    annotations.write_text(
+    _write_annotations(
+        annotations,
         """<annotations>
           <meta>
             <task>
@@ -440,6 +491,18 @@ def test_convert_writes_mmseg_layout(tmp_path):
     assert not (out / "JPEGImages").exists()
     assert not (out / "SegmentationClass").exists()
     assert not (out / "ImageSets" / "Segmentation").exists()
+    manifest = {record["image_name"]: record for record in read_manifest(out)}
+    assert manifest["one.jpg"]["sample_id"] == "cvat:104:208:0"
+    assert manifest["two.jpg"]["sample_id"] == "cvat:104:209:1"
+    assert manifest["one.jpg"]["task_name"] == "batch_260618"
+    assert manifest["one.jpg"]["image_path"] == "images/one.jpg"
+    assert manifest["one.jpg"]["gt_mask_path"] == "annotations/one.png"
+    assert manifest["one.jpg"]["polygon_mask_path"] == (
+        "annotations/one_polygon.png"
+    )
+    assert manifest["one.jpg"]["polyline_mask_path"] == (
+        "annotations/one_polyline.png"
+    )
     with Image.open(out / "annotations" / "one.png") as mask:
         assert mask.mode == "P"
         palette = mask.getpalette()
@@ -459,7 +522,8 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
     Image.new("RGB", (8, 8)).save(img1)
     Image.new("RGB", (8, 8)).save(img2)
     annotations = tmp_path / "annotations.xml"
-    annotations.write_text(
+    _write_annotations(
+        annotations,
         """<annotations>
           <meta>
             <task>
@@ -538,6 +602,15 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
     assert not (out / "annotations").exists()
     assert not (out / "train.txt").exists()
     assert not (out / "val.txt").exists()
+    manifest = {record["image_name"]: record for record in read_manifest(out)}
+    assert manifest["one.jpg"]["image_path"] == "JPEGImages/one.jpg"
+    assert manifest["one.jpg"]["gt_mask_path"] == "SegmentationClass/one.png"
+    assert manifest["one.jpg"]["polygon_mask_path"] == (
+        "SegmentationClass/one_polygon.png"
+    )
+    assert manifest["one.jpg"]["polyline_mask_path"] == (
+        "SegmentationClass/one_polyline.png"
+    )
 
     with Image.open(out / "SegmentationClass" / "one.png") as mask:
         assert mask.mode == "P"
@@ -563,7 +636,8 @@ def test_convert_rejects_branch_mask_name_collisions(tmp_path):
     cv2.imwrite(str(img1), np.zeros((8, 8, 3), dtype=np.uint8))
     cv2.imwrite(str(img2), np.zeros((8, 8, 3), dtype=np.uint8))
     annotations = tmp_path / "annotations.xml"
-    annotations.write_text(
+    _write_annotations(
+        annotations,
         """<annotations>
           <meta><task><labels>
             <label><name>object</name></label>
@@ -590,7 +664,8 @@ def test_strict_categories_allows_background_not_in_cvat(tmp_path):
     cv2.imwrite(str(img1), np.zeros((8, 8, 3), dtype=np.uint8))
     cv2.imwrite(str(img2), np.zeros((8, 8, 3), dtype=np.uint8))
     annotations = tmp_path / "annotations.xml"
-    annotations.write_text(
+    _write_annotations(
+        annotations,
         """<annotations>
           <meta><task><labels>
             <label><name>object</name></label>
@@ -628,7 +703,8 @@ def test_strict_categories_rejects_extra_non_background_label(tmp_path):
     cv2.imwrite(str(img1), np.zeros((8, 8, 3), dtype=np.uint8))
     cv2.imwrite(str(img2), np.zeros((8, 8, 3), dtype=np.uint8))
     annotations = tmp_path / "annotations.xml"
-    annotations.write_text(
+    _write_annotations(
+        annotations,
         """<annotations>
           <meta><task><labels>
             <label><name>object</name></label>

@@ -1,4 +1,5 @@
 import pytest
+from databox.segmentation.dataset_manifest import read_manifest, write_manifest
 from databox.segmentation.merge_mmseg_datasets import merge_datasets
 
 
@@ -22,6 +23,27 @@ def _make_dataset(root, name, stems=("one",)):
         )
     (dataset / "ImageSets" / "Segmentation" / "train.txt").write_text(
         "".join(f"{stem}\n" for stem in stems)
+    )
+    task_name = f"{dataset.parent.name}-{name}"
+    task_id = sum(ord(character) for character in task_name)
+    write_manifest(
+        dataset,
+        [
+            {
+                "sample_id": f"cvat:{task_id}:2:{frame_id}",
+                "task_name": task_name,
+                "split": "train",
+                "image_name": f"{stem}.jpg",
+                "image_path": f"JPEGImages/{stem}.jpg",
+                "gt_mask_path": f"SegmentationClass/{stem}.png",
+                "polygon_mask_path": f"SegmentationClass/{stem}_polygon.png",
+                "polyline_mask_path": f"SegmentationClass/{stem}_polyline.png",
+                "task_id": task_id,
+                "job_id": 2,
+                "frame_id": frame_id,
+            }
+            for frame_id, stem in enumerate(stems)
+        ],
     )
     return dataset
 
@@ -58,6 +80,17 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
     assert (
         output / "ImageSets" / "Segmentation" / "train.txt"
     ).read_text().splitlines() == ["first__one", "second__two"]
+    records = read_manifest(output)
+    assert [record["image_path"] for record in records] == [
+        "JPEGImages/first__one.jpg",
+        "JPEGImages/second__two.jpg",
+    ]
+    assert records[0]["polygon_mask_path"] == (
+        "SegmentationClass/first__one_polygon.png"
+    )
+    assert records[0]["polyline_mask_path"] == (
+        "SegmentationClass/first__one_polyline.png"
+    )
 
 
 def test_merge_datasets_requires_branch_masks(tmp_path):

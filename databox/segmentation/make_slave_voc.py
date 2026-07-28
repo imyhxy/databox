@@ -6,6 +6,15 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+try:
+    from databox.segmentation.dataset_manifest import (
+        MANIFEST_FILENAME,
+        read_manifest,
+        write_manifest,
+    )
+except ModuleNotFoundError:
+    from dataset_manifest import MANIFEST_FILENAME, read_manifest, write_manifest
+
 BRIGHTNESS_SUFFIX = re.compile(r"_0G_\d{3}$")
 SPLITS = ("train", "val")
 POLYLINE_ANNOTATION_SUFFIX = "_polyline.txt"
@@ -16,6 +25,7 @@ class MasterItem:
     stem: str
     split: str
     mask_paths: tuple[Path, ...]
+    manifest_record: dict
 
 
 def scene_key(stem: str) -> str:
@@ -42,15 +52,26 @@ def clean_output(output: Path) -> None:
     labelmap = output / "labelmap.txt"
     if labelmap.exists():
         labelmap.unlink()
+    manifest = output / MANIFEST_FILENAME
+    if manifest.exists():
+        manifest.unlink()
 
 
 def build_master_index(master: Path) -> dict[str, MasterItem]:
     split_dir = master / "ImageSets" / "Segmentation"
     mask_dir = master / "SegmentationClass"
     index = {}
+    manifest_records = read_manifest(master)
+    manifest_by_stem = {
+        Path(record["image_name"]).stem: record for record in manifest_records
+    }
+    if len(manifest_by_stem) != len(manifest_records):
+        raise ValueError(f"Duplicate master manifest image stems: {master}")
+    split_stems = set()
 
     for split in SPLITS:
         for stem in read_split(split_dir / f"{split}.txt"):
+            split_stems.add(stem)
             key = scene_key(stem)
             if key in index:
                 existing = index[key]
@@ -71,8 +92,27 @@ def build_master_index(master: Path) -> dict[str, MasterItem]:
                     raise FileNotFoundError(
                         f"Master segmentation file not found: {mask_path}"
                     )
-            index[key] = MasterItem(stem=stem, split=split, mask_paths=mask_paths)
+            if stem not in manifest_by_stem:
+                raise ValueError(f"Master manifest missing image stem: {stem}")
+            manifest_record = manifest_by_stem[stem]
+            if manifest_record["split"] != split:
+                raise ValueError(
+                    f"Master manifest split differs for {stem}: "
+                    f"{manifest_record['split']!r} != {split!r}"
+                )
+            index[key] = MasterItem(
+                stem=stem,
+                split=split,
+                mask_paths=mask_paths,
+                manifest_record=manifest_record,
+            )
 
+    extra_manifest_stems = sorted(set(manifest_by_stem) - split_stems)
+    if extra_manifest_stems:
+        raise ValueError(
+            f"Master manifest contains stems absent from splits: "
+            f"{extra_manifest_stems[:5]}"
+        )
     return index
 
 
@@ -131,9 +171,11 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
     split_dir.mkdir(parents=True, exist_ok=True)
 
     split_stems = {split: [] for split in SPLITS}
+    manifest_records = []
     for slave_image, item in matched:
         dst_stem = slave_image.stem
-        shutil.copy2(slave_image, image_dir / f"{dst_stem}.jpg")
+        dst_image = image_dir / f"{dst_stem}.jpg"
+        shutil.copy2(slave_image, dst_image)
         for mask_path in item.mask_paths:
             suffix = mask_path.stem.removeprefix(item.stem)
             if mask_path.suffix == ".txt":
@@ -141,6 +183,30 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
             else:
                 shutil.copy2(mask_path, mask_dir / f"{dst_stem}{suffix}.png")
         split_stems[item.split].append(dst_stem)
+        source_record = item.manifest_record
+        manifest_records.append(
+            {
+                "sample_id": (
+                    f"{source_record['sample_id']}:derived:{dst_stem}"
+                ),
+                "task_name": source_record["task_name"],
+                "split": item.split,
+                "image_name": dst_image.name,
+                "image_path": dst_image.relative_to(output).as_posix(),
+                "gt_mask_path": (
+                    mask_dir / f"{dst_stem}.png"
+                ).relative_to(output).as_posix(),
+                "polygon_mask_path": (
+                    mask_dir / f"{dst_stem}_polygon.png"
+                ).relative_to(output).as_posix(),
+                "polyline_mask_path": (
+                    mask_dir / f"{dst_stem}_polyline.png"
+                ).relative_to(output).as_posix(),
+                "task_id": source_record["task_id"],
+                "job_id": source_record["job_id"],
+                "frame_id": source_record["frame_id"],
+            }
+        )
 
     for split in SPLITS:
         text = "\n".join(split_stems[split])
@@ -149,6 +215,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         (split_dir / f"{split}.txt").write_text(text)
 
     shutil.copy2(labelmap, output / "labelmap.txt")
+    write_manifest(output, manifest_records)
     return len(matched)
 
 

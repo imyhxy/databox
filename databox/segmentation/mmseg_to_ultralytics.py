@@ -7,6 +7,15 @@ from pathlib import Path
 
 from PIL import Image
 
+try:
+    from databox.segmentation.dataset_manifest import (
+        MANIFEST_FILENAME,
+        read_manifest,
+        write_manifest,
+    )
+except ModuleNotFoundError:
+    from dataset_manifest import MANIFEST_FILENAME, read_manifest, write_manifest
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 SPLITS = ("train", "val")
 
@@ -59,18 +68,50 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
     split_stems = {split: _read_split(split_dir / f"{split}.txt") for split in SPLITS}
     needed_stems = {stem for stems in split_stems.values() for stem in stems}
     _validate_split_stems(dataset_root, needed_stems, image_paths, mask_dir)
+    manifest_by_stem = _manifest_by_stem(dataset_root, split_stems)
 
     _clean_output(output_root)
     output_images_dir = output_root / "images"
     output_labels_dir = output_root / "labels"
+    output_polygon_masks_dir = output_root / "polygon_masks"
+    output_polyline_masks_dir = output_root / "polyline_masks"
     output_images_dir.mkdir(parents=True)
     output_labels_dir.mkdir(parents=True)
+    output_polygon_masks_dir.mkdir(parents=True)
+    output_polyline_masks_dir.mkdir(parents=True)
 
+    output_manifest = []
     for stem in sorted(needed_stems):
         image_path = image_paths[stem]
         output_image = output_images_dir / image_path.name
         _relative_symlink(image_path, output_image)
-        _save_plain_mask(mask_dir / f"{stem}.png", output_labels_dir / f"{stem}.png")
+        output_mask = output_labels_dir / f"{stem}.png"
+        output_polygon_mask = output_polygon_masks_dir / f"{stem}.png"
+        output_polyline_mask = output_polyline_masks_dir / f"{stem}.png"
+        _save_plain_mask(mask_dir / f"{stem}.png", output_mask)
+        _save_plain_mask(
+            mask_dir / f"{stem}_polygon.png",
+            output_polygon_mask,
+        )
+        _save_plain_mask(
+            mask_dir / f"{stem}_polyline.png",
+            output_polyline_mask,
+        )
+        record = dict(manifest_by_stem[stem])
+        record.update(
+            {
+                "image_name": output_image.name,
+                "image_path": output_image.relative_to(output_root).as_posix(),
+                "gt_mask_path": output_mask.relative_to(output_root).as_posix(),
+                "polygon_mask_path": output_polygon_mask.relative_to(
+                    output_root
+                ).as_posix(),
+                "polyline_mask_path": output_polyline_mask.relative_to(
+                    output_root
+                ).as_posix(),
+            }
+        )
+        output_manifest.append(record)
 
     for split, stems in split_stems.items():
         lines = [f"./images/{image_paths[stem].name}" for stem in stems]
@@ -79,6 +120,7 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
             text += "\n"
         (output_root / f"{split}.txt").write_text(text)
 
+    write_manifest(output_root, output_manifest)
     return len(needed_stems)
 
 
@@ -124,20 +166,33 @@ def _validate_split_stems(
     missing_masks = sorted(
         stem for stem in stems if not (mask_dir / f"{stem}.png").exists()
     )
-    if missing_images or missing_masks:
+    missing_polygon_masks = sorted(
+        stem for stem in stems if not (mask_dir / f"{stem}_polygon.png").exists()
+    )
+    missing_polyline_masks = sorted(
+        stem for stem in stems if not (mask_dir / f"{stem}_polyline.png").exists()
+    )
+    if (
+        missing_images
+        or missing_masks
+        or missing_polygon_masks
+        or missing_polyline_masks
+    ):
         raise ValueError(
             f"{dataset_root} split files reference missing images or masks: "
-            f"images={missing_images[:5]}, masks={missing_masks[:5]}"
+            f"images={missing_images[:5]}, masks={missing_masks[:5]}, "
+            f"polygon_masks={missing_polygon_masks[:5]}, "
+            f"polyline_masks={missing_polyline_masks[:5]}"
         )
 
 
 def _clean_output(output_root: Path) -> None:
-    for dirname in ("images", "labels"):
+    for dirname in ("images", "labels", "polygon_masks", "polyline_masks"):
         path = output_root / dirname
         if path.exists():
             shutil.rmtree(path)
-    for split in SPLITS:
-        path = output_root / f"{split}.txt"
+    for filename in (*[f"{split}.txt" for split in SPLITS], MANIFEST_FILENAME):
+        path = output_root / filename
         if path.exists():
             path.unlink()
     if output_root.exists() and not any(output_root.iterdir()):
@@ -158,6 +213,34 @@ def _save_plain_mask(source: Path, destination: Path) -> None:
         else:
             plain = image.convert("L")
         plain.save(destination)
+
+
+def _manifest_by_stem(
+    dataset_root: Path, split_stems: dict[str, list[str]]
+) -> dict[str, dict]:
+    records = read_manifest(dataset_root)
+    by_stem = {}
+    for record in records:
+        stem = Path(record["image_name"]).stem
+        if stem in by_stem:
+            raise ValueError(f"Duplicate manifest image stem in {dataset_root}: {stem}")
+        by_stem[stem] = record
+
+    expected_stems = {stem for stems in split_stems.values() for stem in stems}
+    if set(by_stem) != expected_stems:
+        raise ValueError(
+            f"{dataset_root} manifest and split stems differ: "
+            f"missing={sorted(expected_stems - set(by_stem))[:5]}, "
+            f"extra={sorted(set(by_stem) - expected_stems)[:5]}"
+        )
+    for split, stems in split_stems.items():
+        for stem in stems:
+            if by_stem[stem]["split"] != split:
+                raise ValueError(
+                    f"{dataset_root} manifest split differs for {stem}: "
+                    f"{by_stem[stem]['split']!r} != {split!r}"
+                )
+    return by_stem
 
 
 if __name__ == "__main__":

@@ -5,6 +5,11 @@ import shutil
 from collections import defaultdict
 from pathlib import Path
 
+try:
+    from databox.segmentation.dataset_manifest import read_manifest, write_manifest
+except ModuleNotFoundError:
+    from dataset_manifest import read_manifest, write_manifest
+
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 MASK_EXTENSIONS = {".png", ".bmp", ".tif", ".tiff"}
 BRANCH_MASK_SUFFIXES = ("_polygon", "_polyline")
@@ -81,6 +86,7 @@ def merge_datasets(
     output_splits_dir.mkdir(parents=True)
 
     merged_splits: dict[str, list[str]] = defaultdict(list)
+    merged_manifest = []
     used_stems: set[str] = set()
 
     for input_root, prefix in zip(input_roots, prefixes, strict=True):
@@ -88,8 +94,10 @@ def merge_datasets(
         split_entries = _read_split_entries(input_root / "ImageSets" / "Segmentation")
         split_stems = {stem for stems in split_entries.values() for stem in stems}
         mask_paths = _collect_masks(input_root / "SegmentationClass", split_stems)
+        manifest_by_stem = _manifest_by_stem(input_root, split_entries)
 
         missing_images = sorted(split_stems - set(image_paths))
+        extra_images = sorted(set(image_paths) - split_stems)
         missing_masks = sorted(split_stems - set(mask_paths))
         missing_polyline_annotations = sorted(
             stem
@@ -98,11 +106,17 @@ def merge_datasets(
                 input_root / "SegmentationClass" / f"{stem}{POLYLINE_ANNOTATION_SUFFIX}"
             ).exists()
         )
-        if missing_images or missing_masks or missing_polyline_annotations:
+        if (
+            missing_images
+            or extra_images
+            or missing_masks
+            or missing_polyline_annotations
+        ):
             raise ValueError(
                 f"{input_root} split files reference missing images, masks, or "
                 "polyline annotations: "
-                f"images={missing_images[:5]}, masks={missing_masks[:5]}, "
+                f"images={missing_images[:5]}, extra_images={extra_images[:5]}, "
+                f"masks={missing_masks[:5]}, "
                 f"polylines={missing_polyline_annotations[:5]}"
             )
 
@@ -131,6 +145,24 @@ def merge_datasets(
                 polyline_annotation_path,
                 output_masks_dir / f"{merged_stem}{POLYLINE_ANNOTATION_SUFFIX}",
             )
+            record = dict(manifest_by_stem[stem])
+            output_image = output_images_dir / f"{merged_stem}{image_path.suffix}"
+            record.update(
+                {
+                    "image_name": output_image.name,
+                    "image_path": output_image.relative_to(output_root).as_posix(),
+                    "gt_mask_path": (
+                        output_masks_dir / f"{merged_stem}.png"
+                    ).relative_to(output_root).as_posix(),
+                    "polygon_mask_path": (
+                        output_masks_dir / f"{merged_stem}_polygon.png"
+                    ).relative_to(output_root).as_posix(),
+                    "polyline_mask_path": (
+                        output_masks_dir / f"{merged_stem}_polyline.png"
+                    ).relative_to(output_root).as_posix(),
+                }
+            )
+            merged_manifest.append(record)
 
         for split_name, stems in split_entries.items():
             merged_splits[split_name].extend(f"{prefix}__{stem}" for stem in stems)
@@ -138,6 +170,7 @@ def merge_datasets(
     (output_root / "labelmap.txt").write_text(labelmap)
     for split_name, stems in sorted(merged_splits.items()):
         (output_splits_dir / f"{split_name}.txt").write_text("\n".join(stems) + "\n")
+    write_manifest(output_root, merged_manifest)
 
 
 def _validate_inputs(input_roots: list[Path]) -> None:
@@ -232,6 +265,46 @@ def _read_split_entries(split_dir: Path) -> dict[str, list[str]]:
             stems.append(Path(line).stem)
         entries[path.stem] = stems
     return entries
+
+
+def _manifest_by_stem(
+    input_root: Path, split_entries: dict[str, list[str]]
+) -> dict[str, dict]:
+    records = read_manifest(input_root)
+    by_stem = {}
+    for record in records:
+        stem = Path(record["image_name"]).stem
+        if stem in by_stem:
+            raise ValueError(f"Duplicate manifest image stem in {input_root}: {stem}")
+        by_stem[stem] = record
+
+    stem_splits: dict[str, list[str]] = defaultdict(list)
+    for split, stems in split_entries.items():
+        for stem in stems:
+            stem_splits[stem].append(split)
+    ambiguous = {
+        stem: splits for stem, splits in stem_splits.items() if len(splits) != 1
+    }
+    if ambiguous:
+        raise ValueError(f"Dataset stems must belong to exactly one split: {ambiguous}")
+
+    expected_stems = set(stem_splits)
+    if set(by_stem) != expected_stems:
+        raise ValueError(
+            f"{input_root} manifest and split stems differ: "
+            f"missing={sorted(expected_stems - set(by_stem))[:5]}, "
+            f"extra={sorted(set(by_stem) - expected_stems)[:5]}"
+        )
+    mismatched = sorted(
+        stem
+        for stem, record in by_stem.items()
+        if record["split"] != stem_splits[stem][0]
+    )
+    if mismatched:
+        raise ValueError(
+            f"{input_root} manifest split differs from split files: {mismatched[:5]}"
+        )
+    return by_stem
 
 
 if __name__ == "__main__":
