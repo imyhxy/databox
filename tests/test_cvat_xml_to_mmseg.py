@@ -504,8 +504,8 @@ def test_convert_writes_mmseg_layout(tmp_path):
     manifest = {
         Path(record["image_path"]).name: record for record in read_manifest(out)
     }
-    assert manifest["one.jpg"]["sample_id"] == "cvat:104:208:0"
-    assert manifest["two.jpg"]["sample_id"] == "cvat:104:209:1"
+    assert manifest["one.jpg"]["sample_id"] == "cvat_104_208_0"
+    assert manifest["two.jpg"]["sample_id"] == "cvat_104_209_1"
     assert manifest["one.jpg"]["task_name"] == "batch_260618"
     assert manifest["one.jpg"]["image_path"] == "images/one.jpg"
     assert manifest["one.jpg"]["mask_paths"] == {

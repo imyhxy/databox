@@ -4,7 +4,7 @@ from databox.segmentation.dataset_manifest import read_manifest, write_manifest
 
 def _record(stem, *, split, frame_id):
     return {
-        "sample_id": f"cvat:104:208:{frame_id}",
+        "sample_id": f"cvat_104_208_{frame_id}",
         "task_name": "batch_260618",
         "split": split,
         "image_path": f"images/{stem}.jpg",

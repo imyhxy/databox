@@ -35,7 +35,7 @@ def _make_dataset(root, name, stems=("one",)):
         dataset,
         [
             {
-                "sample_id": f"cvat:{task_id}:2:{frame_id}",
+                "sample_id": f"cvat_{task_id}_2_{frame_id}",
                 "task_name": task_name,
                 "split": "train",
                 "image_path": f"JPEGImages/{stem}.jpg",

@@ -48,7 +48,7 @@ def _make_master(root):
         master,
         [
             {
-                "sample_id": f"cvat:13:105:{frame_id}",
+                "sample_id": f"cvat_13_105_{frame_id}",
                 "task_name": "master-task",
                 "split": split,
                 "image_path": f"JPEGImages/{stem}.jpg",
@@ -157,9 +157,9 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
         assert (output / filename).read_text() == f"{filename}\n"
     manifest = read_manifest(output)
     assert [record["sample_id"] for record in manifest] == [
-        "cvat:13:105:1:derived:scene-a_0G_100",
-        "cvat:13:105:1:derived:scene-a_0G_120",
-        "cvat:13:105:2:derived:scene-b_0G_100",
+        "cvat_13_105_1_derived_scene-a_0G_100",
+        "cvat_13_105_1_derived_scene-a_0G_120",
+        "cvat_13_105_2_derived_scene-b_0G_100",
     ]
     assert manifest[0]["mask_paths"] == {
         "polygon": "SegmentationClass/scene-a_0G_100_polygon.png",
@@ -221,7 +221,7 @@ def test_build_slave_voc_dataset_rejects_branch_mask_name_collisions(tmp_path):
     manifest = read_manifest(master)
     manifest.append(
         {
-            "sample_id": "cvat:13:105:3",
+            "sample_id": "cvat_13_105_3",
             "task_name": "master-task",
             "split": "val",
             "image_path": f"JPEGImages/{collision_stem}.jpg",

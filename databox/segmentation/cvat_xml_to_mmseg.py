@@ -866,7 +866,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
             manifest_records.append(
                 {
                     "sample_id": (
-                        f"cvat:{task_metadata.task_id}:{job_id}:{frame_id}"
+                        f"cvat_{task_metadata.task_id}_{job_id}_{frame_id}"
                     ),
                     "task_name": task_metadata.task_name,
                     "split": split_name,

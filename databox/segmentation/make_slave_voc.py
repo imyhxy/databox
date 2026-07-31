@@ -201,7 +201,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         manifest_records.append(
             {
                 "sample_id": (
-                    f"{source_record['sample_id']}:derived:{dst_stem}"
+                    f"{source_record['sample_id']}_derived_{dst_stem}"
                 ),
                 "task_name": source_record["task_name"],
                 "split": item.split,

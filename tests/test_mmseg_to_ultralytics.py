@@ -29,7 +29,7 @@ def _make_dataset(root):
         dataset,
         [
             {
-                "sample_id": f"cvat:12:21:{frame_id}",
+                "sample_id": f"cvat_12_21_{frame_id}",
                 "task_name": "task",
                 "split": split,
                 "image_path": f"JPEGImages/{image_name}",
