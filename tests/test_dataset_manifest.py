@@ -7,11 +7,14 @@ def _record(stem, *, split, frame_id):
         "sample_id": f"cvat:104:208:{frame_id}",
         "task_name": "batch_260618",
         "split": split,
-        "image_name": f"{stem}.jpg",
         "image_path": f"images/{stem}.jpg",
-        "gt_mask_path": f"labels/{stem}.png",
-        "polygon_mask_path": f"polygon_masks/{stem}.png",
-        "polyline_mask_path": f"polyline_masks/{stem}.png",
+        "mask_paths": {
+            "polygon": f"polygon_masks/{stem}.png",
+            "polyline": f"polyline_masks/{stem}.png",
+            "main": f"labels/{stem}.png",
+        },
+        "width": 640,
+        "height": 480,
         "task_id": 104,
         "job_id": 208,
         "frame_id": frame_id,
@@ -40,9 +43,9 @@ def test_manifest_round_trip_is_deterministically_sorted(tmp_path):
 
     write_manifest(tmp_path, records)
 
-    assert [record["image_name"] for record in read_manifest(tmp_path)] == [
-        "train_sample.jpg",
-        "val_sample.jpg",
+    assert [record["image_path"] for record in read_manifest(tmp_path)] == [
+        "images/train_sample.jpg",
+        "images/val_sample.jpg",
     ]
 
 
@@ -61,5 +64,14 @@ def test_manifest_rejects_missing_branch_mask(tmp_path):
     _write_files(tmp_path, "one")
     (tmp_path / "polygon_masks" / "one.png").unlink()
 
-    with pytest.raises(FileNotFoundError, match="polygon_mask_path"):
+    with pytest.raises(FileNotFoundError, match="mask_paths.polygon"):
         write_manifest(tmp_path, [_record("one", split="train", frame_id=1)])
+
+
+def test_manifest_rejects_removed_fields(tmp_path):
+    _write_files(tmp_path, "one")
+    record = _record("one", split="train", frame_id=1)
+    record["image_name"] = "one.jpg"
+
+    with pytest.raises(ValueError, match="removed fields"):
+        write_manifest(tmp_path, [record])

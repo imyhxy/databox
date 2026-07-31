@@ -1,6 +1,12 @@
 import pytest
 from databox.segmentation.dataset_manifest import read_manifest, write_manifest
 from databox.segmentation.make_slave_voc import build_slave_voc_dataset, scene_key
+from PIL import Image
+
+
+def _write_image(path, size=(8, 6)):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.new("RGB", size).save(path)
 
 
 def _make_master(root):
@@ -8,7 +14,12 @@ def _make_master(root):
     (master / "JPEGImages").mkdir(parents=True)
     (master / "SegmentationClass").mkdir(parents=True)
     (master / "ImageSets" / "Segmentation").mkdir(parents=True)
-    (master / "labelmap.txt").write_text("background:0,0,0::\n")
+    for filename in (
+        "labelmap.txt",
+        "labelmap_polygon.txt",
+        "labelmap_polyline.txt",
+    ):
+        (master / filename).write_text(f"{filename}\n")
     (master / "SegmentationClass" / "scene-a_0G_080.png").write_text("mask-a")
     (master / "SegmentationClass" / "scene-a_0G_080_polygon.png").write_text(
         "mask-a-polygon"
@@ -31,8 +42,8 @@ def _make_master(root):
     )
     (master / "ImageSets" / "Segmentation" / "train.txt").write_text("scene-a_0G_080\n")
     (master / "ImageSets" / "Segmentation" / "val.txt").write_text("scene-b_0G_080\n")
-    (master / "JPEGImages" / "scene-a_0G_080.jpg").write_text("image-a")
-    (master / "JPEGImages" / "scene-b_0G_080.jpg").write_text("image-b")
+    _write_image(master / "JPEGImages" / "scene-a_0G_080.jpg", (10, 8))
+    _write_image(master / "JPEGImages" / "scene-b_0G_080.jpg", (12, 9))
     write_manifest(
         master,
         [
@@ -40,11 +51,14 @@ def _make_master(root):
                 "sample_id": f"cvat:13:105:{frame_id}",
                 "task_name": "master-task",
                 "split": split,
-                "image_name": f"{stem}.jpg",
                 "image_path": f"JPEGImages/{stem}.jpg",
-                "gt_mask_path": f"SegmentationClass/{stem}.png",
-                "polygon_mask_path": f"SegmentationClass/{stem}_polygon.png",
-                "polyline_mask_path": f"SegmentationClass/{stem}_polyline.png",
+                "mask_paths": {
+                    "polygon": f"SegmentationClass/{stem}_polygon.png",
+                    "polyline": f"SegmentationClass/{stem}_polyline.png",
+                    "main": f"SegmentationClass/{stem}.png",
+                },
+                "width": 10 if stem.startswith("scene-a") else 12,
+                "height": 8 if stem.startswith("scene-a") else 9,
                 "task_id": 13,
                 "job_id": 105,
                 "frame_id": frame_id,
@@ -63,10 +77,10 @@ def _make_slave(root):
     (slave / "0G_100").mkdir(parents=True)
     (slave / "0G_120").mkdir()
     (slave / "0G_060").mkdir()
-    (slave / "0G_100" / "scene-a_0G_100.jpg").write_text("image-a-100")
-    (slave / "0G_120" / "scene-a_0G_120.jpg").write_text("image-a-120")
-    (slave / "0G_100" / "scene-b_0G_100.jpg").write_text("image-b-100")
-    (slave / "0G_060" / "unknown_0G_060.jpg").write_text("unknown")
+    _write_image(slave / "0G_100" / "scene-a_0G_100.jpg", (20, 10))
+    _write_image(slave / "0G_120" / "scene-a_0G_120.jpg", (22, 11))
+    _write_image(slave / "0G_100" / "scene-b_0G_100.jpg", (24, 12))
+    _write_image(slave / "0G_060" / "unknown_0G_060.jpg")
     return slave
 
 
@@ -135,16 +149,25 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
     assert (
         output / "ImageSets" / "Segmentation" / "val.txt"
     ).read_text().splitlines() == ["scene-b_0G_100"]
-    assert (output / "labelmap.txt").read_text() == "background:0,0,0::\n"
+    for filename in (
+        "labelmap.txt",
+        "labelmap_polygon.txt",
+        "labelmap_polyline.txt",
+    ):
+        assert (output / filename).read_text() == f"{filename}\n"
     manifest = read_manifest(output)
     assert [record["sample_id"] for record in manifest] == [
         "cvat:13:105:1:derived:scene-a_0G_100",
         "cvat:13:105:1:derived:scene-a_0G_120",
         "cvat:13:105:2:derived:scene-b_0G_100",
     ]
-    assert manifest[0]["polygon_mask_path"] == (
-        "SegmentationClass/scene-a_0G_100_polygon.png"
-    )
+    assert manifest[0]["mask_paths"] == {
+        "polygon": "SegmentationClass/scene-a_0G_100_polygon.png",
+        "polyline": "SegmentationClass/scene-a_0G_100_polyline.png",
+        "main": "SegmentationClass/scene-a_0G_100.png",
+    }
+    assert manifest[0]["width"] == 20
+    assert manifest[0]["height"] == 10
 
 
 def test_build_slave_voc_dataset_rejects_duplicate_master_scene_keys(tmp_path):
@@ -201,15 +224,14 @@ def test_build_slave_voc_dataset_rejects_branch_mask_name_collisions(tmp_path):
             "sample_id": "cvat:13:105:3",
             "task_name": "master-task",
             "split": "val",
-            "image_name": f"{collision_stem}.jpg",
             "image_path": f"JPEGImages/{collision_stem}.jpg",
-            "gt_mask_path": f"SegmentationClass/{collision_stem}.png",
-            "polygon_mask_path": (
-                f"SegmentationClass/{collision_stem}_polygon.png"
-            ),
-            "polyline_mask_path": (
-                f"SegmentationClass/{collision_stem}_polyline.png"
-            ),
+            "mask_paths": {
+                "polygon": f"SegmentationClass/{collision_stem}_polygon.png",
+                "polyline": f"SegmentationClass/{collision_stem}_polyline.png",
+                "main": f"SegmentationClass/{collision_stem}.png",
+            },
+            "width": 8,
+            "height": 6,
             "task_id": 13,
             "job_id": 105,
             "frame_id": 3,
@@ -217,7 +239,7 @@ def test_build_slave_voc_dataset_rejects_branch_mask_name_collisions(tmp_path):
     )
     write_manifest(master, manifest)
     slave = _make_slave(tmp_path)
-    (slave / "0G_100" / "scene-a_0G_100_polygon.jpg").write_text("image-collision")
+    _write_image(slave / "0G_100" / "scene-a_0G_100_polygon.jpg")
 
     with pytest.raises(ValueError, match="overwrite masks"):
         build_slave_voc_dataset(master, slave, tmp_path / "out")

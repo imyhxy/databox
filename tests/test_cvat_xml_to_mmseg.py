@@ -21,21 +21,21 @@ from PIL import Image
 
 
 def _config(**kwargs):
-    config = dict(
-        annotations=Path("annotations.xml"),
-        output=Path("out"),
-        seed=0,
-        train=0.8,
-        categories=["background", "object", "line"],
-        ignore_categories=[],
-        ignore_index=255,
-        ignore_palette=(128, 128, 128),
-        polyline_width=5,
-        strict_categories=False,
-        palette=[(0, 0, 0), (255, 255, 255), (0, 255, 0)],
-        polygon_categories=["object"],
-        polyline_categories=["line"],
-    )
+    config = {
+        "annotations": Path("annotations.xml"),
+        "output": Path("out"),
+        "seed": 0,
+        "train": 0.8,
+        "categories": ["background", "object", "line"],
+        "ignore_categories": [],
+        "ignore_index": 255,
+        "ignore_palette": (128, 128, 128),
+        "polyline_width": 5,
+        "strict_categories": False,
+        "palette": [(0, 0, 0), (255, 255, 255), (0, 255, 0)],
+        "polygon_categories": ["object"],
+        "polyline_categories": ["line"],
+    }
     config.update(kwargs)
     return Config(**config)
 
@@ -487,22 +487,35 @@ def test_convert_writes_mmseg_layout(tmp_path):
         "object:255,255,255::",
         "line:0,255,0::",
     ]
+    assert (out / "labelmap_polygon.txt").read_text().splitlines() == [
+        "# label:color_rgb:parts:actions",
+        "background:0,0,0::",
+        "object:255,255,255::",
+    ]
+    assert (out / "labelmap_polyline.txt").read_text().splitlines() == [
+        "# label:color_rgb:parts:actions",
+        "background:0,0,0::",
+        "line:0,255,0::",
+    ]
     assert not (out / "test.txt").exists()
     assert not (out / "JPEGImages").exists()
     assert not (out / "SegmentationClass").exists()
     assert not (out / "ImageSets" / "Segmentation").exists()
-    manifest = {record["image_name"]: record for record in read_manifest(out)}
+    manifest = {
+        Path(record["image_path"]).name: record for record in read_manifest(out)
+    }
     assert manifest["one.jpg"]["sample_id"] == "cvat:104:208:0"
     assert manifest["two.jpg"]["sample_id"] == "cvat:104:209:1"
     assert manifest["one.jpg"]["task_name"] == "batch_260618"
     assert manifest["one.jpg"]["image_path"] == "images/one.jpg"
-    assert manifest["one.jpg"]["gt_mask_path"] == "annotations/one.png"
-    assert manifest["one.jpg"]["polygon_mask_path"] == (
-        "annotations/one_polygon.png"
-    )
-    assert manifest["one.jpg"]["polyline_mask_path"] == (
-        "annotations/one_polyline.png"
-    )
+    assert manifest["one.jpg"]["mask_paths"] == {
+        "polygon": "annotations/one_polygon.png",
+        "polyline": "annotations/one_polyline.png",
+        "main": "annotations/one.png",
+    }
+    assert manifest["one.jpg"]["width"] == 8
+    assert manifest["one.jpg"]["height"] == 8
+    assert "image_name" not in manifest["one.jpg"]
     with Image.open(out / "annotations" / "one.png") as mask:
         assert mask.mode == "P"
         palette = mask.getpalette()
@@ -598,19 +611,31 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
         "object:255,255,255::",
         "line:0,255,0::",
     ]
+    assert (out / "labelmap_polygon.txt").read_text().splitlines() == [
+        "# label:color_rgb:parts:actions",
+        "background:0,0,0::",
+        "object:255,255,255::",
+    ]
+    assert (out / "labelmap_polyline.txt").read_text().splitlines() == [
+        "# label:color_rgb:parts:actions",
+        "background:0,0,0::",
+        "line:0,255,0::",
+    ]
     assert not (out / "images").exists()
     assert not (out / "annotations").exists()
     assert not (out / "train.txt").exists()
     assert not (out / "val.txt").exists()
-    manifest = {record["image_name"]: record for record in read_manifest(out)}
+    manifest = {
+        Path(record["image_path"]).name: record for record in read_manifest(out)
+    }
     assert manifest["one.jpg"]["image_path"] == "JPEGImages/one.jpg"
-    assert manifest["one.jpg"]["gt_mask_path"] == "SegmentationClass/one.png"
-    assert manifest["one.jpg"]["polygon_mask_path"] == (
-        "SegmentationClass/one_polygon.png"
-    )
-    assert manifest["one.jpg"]["polyline_mask_path"] == (
-        "SegmentationClass/one_polyline.png"
-    )
+    assert manifest["one.jpg"]["mask_paths"] == {
+        "polygon": "SegmentationClass/one_polygon.png",
+        "polyline": "SegmentationClass/one_polyline.png",
+        "main": "SegmentationClass/one.png",
+    }
+    assert manifest["one.jpg"]["width"] == 8
+    assert manifest["one.jpg"]["height"] == 8
 
     with Image.open(out / "SegmentationClass" / "one.png") as mask:
         assert mask.mode == "P"

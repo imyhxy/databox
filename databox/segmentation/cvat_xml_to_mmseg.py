@@ -136,7 +136,10 @@ def parse_args():
     parser.add_argument(
         "--strict-categories",
         action="store_true",
-        help="Reject configured categories that do not exist in CVAT labels, except background",
+        help=(
+            "Reject configured categories that do not exist in CVAT labels, "
+            "except background"
+        ),
     )
     return parser.parse_args()
 
@@ -546,7 +549,14 @@ def clean_output(output: Path) -> None:
     image_sets = output / "ImageSets"
     if image_sets.exists() and not any(image_sets.iterdir()):
         image_sets.rmdir()
-    for filename in ("train.txt", "val.txt", "labelmap.txt", MANIFEST_FILENAME):
+    for filename in (
+        "train.txt",
+        "val.txt",
+        "labelmap.txt",
+        "labelmap_polygon.txt",
+        "labelmap_polyline.txt",
+        MANIFEST_FILENAME,
+    ):
         path = output / filename
         if path.exists():
             path.unlink()
@@ -598,7 +608,7 @@ def _write_split_files(
 
 
 def _write_labelmap(
-    output: Path,
+    path: Path,
     categories: list[str],
     palette: list[tuple[int, int, int]],
 ) -> None:
@@ -606,7 +616,29 @@ def _write_labelmap(
     for label, color in zip(categories, palette, strict=True):
         color_text = ",".join(str(channel) for channel in color)
         lines.append(f"{label}:{color_text}::")
-    (output / "labelmap.txt").write_text("\n".join(lines) + "\n")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def _write_labelmaps(output: Path, config: Config) -> None:
+    _write_labelmap(output / "labelmap.txt", config.categories, config.palette)
+    _write_labelmap(
+        output / "labelmap_polygon.txt",
+        ["background", *config.polygon_categories],
+        branch_palette(
+            config.polygon_categories,
+            config.categories,
+            config.palette,
+        ),
+    )
+    _write_labelmap(
+        output / "labelmap_polyline.txt",
+        ["background", *config.polyline_categories],
+        branch_palette(
+            config.polyline_categories,
+            config.categories,
+            config.palette,
+        ),
+    )
 
 
 def save_palette_mask(
@@ -699,6 +731,23 @@ def job_id_for_frame(metadata: CvatTaskMetadata, frame_id: int) -> int:
     return matches[0]
 
 
+def image_dimensions(image: ET.Element) -> tuple[int, int]:
+    try:
+        width = int(image.attrib["width"])
+        height = int(image.attrib["height"])
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            f"CVAT image has invalid dimensions: "
+            f"width={image.attrib.get('width')!r}, "
+            f"height={image.attrib.get('height')!r}"
+        ) from exc
+    if width <= 0 or height <= 0:
+        raise ValueError(
+            f"CVAT image dimensions must be positive: width={width}, height={height}"
+        )
+    return width, height
+
+
 def convert_cvat_xml_to_mmseg(config: Config) -> None:
     validate_config(config)
     tree = ET.parse(config.annotations)
@@ -723,7 +772,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
     splits = make_splits(images, config)
     clean_output(config.output)
     config.output.mkdir(parents=True, exist_ok=True)
-    _write_labelmap(config.output, config.categories, config.palette)
+    _write_labelmaps(config.output, config)
     _write_split_files(config.output, splits, config.layout)
 
     img_dir, ann_dir, _ = _layout_paths(config.output, config.layout)
@@ -744,6 +793,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                     f"CVAT image has invalid frame id: {image.attrib.get('id')!r}"
                 ) from exc
             job_id = job_id_for_frame(task_metadata, frame_id)
+            width, height = image_dimensions(image)
             dst_img = img_dir / (src.stem + ".jpg")
             dst_mask = ann_dir / f"{src.stem}.png"
             dst_polygon_mask = ann_dir / f"{src.stem}_polygon.png"
@@ -820,15 +870,18 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                     ),
                     "task_name": task_metadata.task_name,
                     "split": split_name,
-                    "image_name": dst_img.name,
                     "image_path": dst_img.relative_to(config.output).as_posix(),
-                    "gt_mask_path": dst_mask.relative_to(config.output).as_posix(),
-                    "polygon_mask_path": dst_polygon_mask.relative_to(
-                        config.output
-                    ).as_posix(),
-                    "polyline_mask_path": dst_polyline_mask.relative_to(
-                        config.output
-                    ).as_posix(),
+                    "mask_paths": {
+                        "polygon": dst_polygon_mask.relative_to(
+                            config.output
+                        ).as_posix(),
+                        "polyline": dst_polyline_mask.relative_to(
+                            config.output
+                        ).as_posix(),
+                        "main": dst_mask.relative_to(config.output).as_posix(),
+                    },
+                    "width": width,
+                    "height": height,
                     "task_id": task_metadata.task_id,
                     "job_id": job_id,
                     "frame_id": frame_id,

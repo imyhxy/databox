@@ -100,15 +100,16 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
         record = dict(manifest_by_stem[stem])
         record.update(
             {
-                "image_name": output_image.name,
                 "image_path": output_image.relative_to(output_root).as_posix(),
-                "gt_mask_path": output_mask.relative_to(output_root).as_posix(),
-                "polygon_mask_path": output_polygon_mask.relative_to(
-                    output_root
-                ).as_posix(),
-                "polyline_mask_path": output_polyline_mask.relative_to(
-                    output_root
-                ).as_posix(),
+                "mask_paths": {
+                    "polygon": output_polygon_mask.relative_to(
+                        output_root
+                    ).as_posix(),
+                    "polyline": output_polyline_mask.relative_to(
+                        output_root
+                    ).as_posix(),
+                    "main": output_mask.relative_to(output_root).as_posix(),
+                },
             }
         )
         output_manifest.append(record)
@@ -221,7 +222,7 @@ def _manifest_by_stem(
     records = read_manifest(dataset_root)
     by_stem = {}
     for record in records:
-        stem = Path(record["image_name"]).stem
+        stem = Path(record["image_path"]).stem
         if stem in by_stem:
             raise ValueError(f"Duplicate manifest image stem in {dataset_root}: {stem}")
         by_stem[stem] = record

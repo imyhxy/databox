@@ -7,27 +7,27 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 MANIFEST_FILENAME = "manifest.jsonl"
+MASK_PATH_KEYS = ("polygon", "polyline", "main")
 REQUIRED_FIELDS = (
     "sample_id",
     "task_name",
     "split",
-    "image_name",
     "image_path",
-    "gt_mask_path",
-    "polygon_mask_path",
-    "polyline_mask_path",
+    "mask_paths",
+    "width",
+    "height",
     "task_id",
     "job_id",
     "frame_id",
 )
-PATH_FIELDS = (
-    "image_path",
+TEXT_FIELDS = ("sample_id", "task_name", "split", "image_path")
+INTEGER_FIELDS = ("width", "height", "task_id", "job_id", "frame_id")
+REMOVED_FIELDS = (
+    "image_name",
     "gt_mask_path",
     "polygon_mask_path",
     "polyline_mask_path",
 )
-TEXT_FIELDS = ("sample_id", "task_name", "split", "image_name", *PATH_FIELDS)
-INTEGER_FIELDS = ("task_id", "job_id", "frame_id")
 
 
 def read_manifest(
@@ -85,14 +85,17 @@ def validate_manifest_records(
     seen_values = {
         "sample_id": set(),
         "image_path": set(),
-        "gt_mask_path": set(),
-        "polygon_mask_path": set(),
-        "polyline_mask_path": set(),
+        **{f"mask_paths.{key}": set() for key in MASK_PATH_KEYS},
     }
     for index, record in enumerate(records, 1):
         missing = [field for field in REQUIRED_FIELDS if field not in record]
         if missing:
             raise ValueError(f"Manifest record {index} missing fields: {missing}")
+        removed = [field for field in REMOVED_FIELDS if field in record]
+        if removed:
+            raise ValueError(
+                f"Manifest record {index} contains removed fields: {removed}"
+            )
 
         for field in TEXT_FIELDS:
             value = record[field]
@@ -107,16 +110,44 @@ def validate_manifest_records(
                 raise ValueError(
                     f"Manifest record {index} field {field!r} must be an integer"
                 )
+            if value <= 0 and field in ("width", "height"):
+                raise ValueError(
+                    f"Manifest record {index} field {field!r} must be positive"
+                )
 
-        image_path = PurePosixPath(record["image_path"])
-        if image_path.name != record["image_name"]:
-            raise ValueError(
-                f"Manifest record {index} image_name does not match image_path: "
-                f"{record['image_name']!r} != {image_path.name!r}"
+        image_relative_path = _validate_relative_path(
+            record["image_path"], "image_path", index
+        )
+        if validate_paths and not (
+            dataset_root / Path(image_relative_path)
+        ).is_file():
+            raise FileNotFoundError(
+                f"Manifest record {index} references missing image_path: "
+                f"{dataset_root / Path(image_relative_path)}"
             )
 
-        for field in PATH_FIELDS:
-            relative_path = _validate_relative_path(record[field], field, index)
+        mask_paths = record["mask_paths"]
+        if not isinstance(mask_paths, dict):
+            raise ValueError(
+                f"Manifest record {index} field 'mask_paths' must be an object"
+            )
+        missing_masks = [key for key in MASK_PATH_KEYS if key not in mask_paths]
+        extra_masks = [key for key in mask_paths if key not in MASK_PATH_KEYS]
+        if missing_masks or extra_masks:
+            raise ValueError(
+                f"Manifest record {index} field 'mask_paths' must contain exactly "
+                f"{list(MASK_PATH_KEYS)}; missing={missing_masks}, extra={extra_masks}"
+            )
+
+        for key in MASK_PATH_KEYS:
+            field = f"mask_paths.{key}"
+            value = mask_paths[key]
+            if not isinstance(value, str) or not value:
+                raise ValueError(
+                    f"Manifest record {index} field {field!r} must be a "
+                    "non-empty string"
+                )
+            relative_path = _validate_relative_path(value, field, index)
             if validate_paths and not (dataset_root / Path(relative_path)).is_file():
                 raise FileNotFoundError(
                     f"Manifest record {index} references missing {field}: "
@@ -124,7 +155,15 @@ def validate_manifest_records(
                 )
 
         for field, values in seen_values.items():
-            value = record[field]
+            value = (
+                record[field]
+                if field != "image_path" and not field.startswith("mask_paths.")
+                else (
+                    record["image_path"]
+                    if field == "image_path"
+                    else mask_paths[field.removeprefix("mask_paths.")]
+                )
+            )
             if value in values:
                 raise ValueError(f"Duplicate manifest {field}: {value!r}")
             values.add(value)

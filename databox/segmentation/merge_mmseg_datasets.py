@@ -14,6 +14,11 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 MASK_EXTENSIONS = {".png", ".bmp", ".tif", ".tiff"}
 BRANCH_MASK_SUFFIXES = ("_polygon", "_polyline")
 POLYLINE_ANNOTATION_SUFFIX = "_polyline.txt"
+LABELMAP_FILENAMES = (
+    "labelmap.txt",
+    "labelmap_polygon.txt",
+    "labelmap_polyline.txt",
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,7 +78,7 @@ def merge_datasets(
         )
 
     _validate_inputs(input_roots)
-    labelmap = _read_common_labelmap(input_roots)
+    labelmaps = _read_common_labelmaps(input_roots)
 
     if output_root.exists():
         shutil.rmtree(output_root)
@@ -149,17 +154,22 @@ def merge_datasets(
             output_image = output_images_dir / f"{merged_stem}{image_path.suffix}"
             record.update(
                 {
-                    "image_name": output_image.name,
                     "image_path": output_image.relative_to(output_root).as_posix(),
-                    "gt_mask_path": (
-                        output_masks_dir / f"{merged_stem}.png"
-                    ).relative_to(output_root).as_posix(),
-                    "polygon_mask_path": (
-                        output_masks_dir / f"{merged_stem}_polygon.png"
-                    ).relative_to(output_root).as_posix(),
-                    "polyline_mask_path": (
-                        output_masks_dir / f"{merged_stem}_polyline.png"
-                    ).relative_to(output_root).as_posix(),
+                    "mask_paths": {
+                        "polygon": (
+                            output_masks_dir / f"{merged_stem}_polygon.png"
+                        )
+                        .relative_to(output_root)
+                        .as_posix(),
+                        "polyline": (
+                            output_masks_dir / f"{merged_stem}_polyline.png"
+                        )
+                        .relative_to(output_root)
+                        .as_posix(),
+                        "main": (output_masks_dir / f"{merged_stem}.png")
+                        .relative_to(output_root)
+                        .as_posix(),
+                    },
                 }
             )
             merged_manifest.append(record)
@@ -167,7 +177,8 @@ def merge_datasets(
         for split_name, stems in split_entries.items():
             merged_splits[split_name].extend(f"{prefix}__{stem}" for stem in stems)
 
-    (output_root / "labelmap.txt").write_text(labelmap)
+    for filename, text in labelmaps.items():
+        (output_root / filename).write_text(text)
     for split_name, stems in sorted(merged_splits.items()):
         (output_splits_dir / f"{split_name}.txt").write_text("\n".join(stems) + "\n")
     write_manifest(output_root, merged_manifest)
@@ -181,7 +192,7 @@ def _validate_inputs(input_roots: list[Path]) -> None:
             input_root / "JPEGImages",
             input_root / "SegmentationClass",
             input_root / "ImageSets" / "Segmentation",
-            input_root / "labelmap.txt",
+            *[input_root / filename for filename in LABELMAP_FILENAMES],
         ):
             if not required_path.exists():
                 raise FileNotFoundError(
@@ -189,15 +200,20 @@ def _validate_inputs(input_roots: list[Path]) -> None:
                 )
 
 
-def _read_common_labelmap(input_roots: list[Path]) -> str:
-    first_labelmap = (input_roots[0] / "labelmap.txt").read_text()
+def _read_common_labelmaps(input_roots: list[Path]) -> dict[str, str]:
+    first_root = input_roots[0]
+    first_labelmaps = {
+        filename: (first_root / filename).read_text()
+        for filename in LABELMAP_FILENAMES
+    }
     for input_root in input_roots[1:]:
-        labelmap = (input_root / "labelmap.txt").read_text()
-        if labelmap != first_labelmap:
-            raise ValueError(
-                f"labelmap.txt differs between {input_roots[0]} and {input_root}"
-            )
-    return first_labelmap
+        for filename in LABELMAP_FILENAMES:
+            labelmap = (input_root / filename).read_text()
+            if labelmap != first_labelmaps[filename]:
+                raise ValueError(
+                    f"{filename} differs between {first_root} and {input_root}"
+                )
+    return first_labelmaps
 
 
 def _collect_by_stem(root: Path, extensions: set[str]) -> dict[str, Path]:
@@ -225,7 +241,8 @@ def _collect_masks(root: Path, expected_stems: set[str]) -> dict[str, dict[str, 
             if mask_path in used_paths:
                 raise ValueError(
                     "Mask file would be reused for multiple stems: "
-                    f"{used_paths[mask_path]!r} and {stem!r} both need {mask_path.name!r}"
+                    f"{used_paths[mask_path]!r} and {stem!r} both need "
+                    f"{mask_path.name!r}"
                 )
             used_paths[mask_path] = stem
             grouped[stem][suffix] = mask_path
@@ -273,7 +290,7 @@ def _manifest_by_stem(
     records = read_manifest(input_root)
     by_stem = {}
     for record in records:
-        stem = Path(record["image_name"]).stem
+        stem = Path(record["image_path"]).stem
         if stem in by_stem:
             raise ValueError(f"Duplicate manifest image stem in {input_root}: {stem}")
         by_stem[stem] = record

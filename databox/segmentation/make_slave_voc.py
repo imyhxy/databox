@@ -6,6 +6,8 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
+from PIL import Image
+
 try:
     from databox.segmentation.dataset_manifest import (
         MANIFEST_FILENAME,
@@ -49,9 +51,14 @@ def clean_output(output: Path) -> None:
     image_sets = output / "ImageSets"
     if image_sets.exists() and not any(image_sets.iterdir()):
         image_sets.rmdir()
-    labelmap = output / "labelmap.txt"
-    if labelmap.exists():
-        labelmap.unlink()
+    for filename in (
+        "labelmap.txt",
+        "labelmap_polygon.txt",
+        "labelmap_polyline.txt",
+    ):
+        labelmap = output / filename
+        if labelmap.exists():
+            labelmap.unlink()
     manifest = output / MANIFEST_FILENAME
     if manifest.exists():
         manifest.unlink()
@@ -63,7 +70,7 @@ def build_master_index(master: Path) -> dict[str, MasterItem]:
     index = {}
     manifest_records = read_manifest(master)
     manifest_by_stem = {
-        Path(record["image_name"]).stem: record for record in manifest_records
+        Path(record["image_path"]).stem: record for record in manifest_records
     }
     if len(manifest_by_stem) != len(manifest_records):
         raise ValueError(f"Duplicate master manifest image stems: {master}")
@@ -128,9 +135,14 @@ def iter_slave_images(slave_raw: Path) -> list[Path]:
 
 def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
     master_index = build_master_index(master)
-    labelmap = master / "labelmap.txt"
-    if not labelmap.exists():
-        raise FileNotFoundError(f"Master labelmap not found: {labelmap}")
+    labelmaps = [
+        master / "labelmap.txt",
+        master / "labelmap_polygon.txt",
+        master / "labelmap_polyline.txt",
+    ]
+    for labelmap in labelmaps:
+        if not labelmap.exists():
+            raise FileNotFoundError(f"Master labelmap not found: {labelmap}")
 
     matched = []
     seen_output_stems = set()
@@ -176,6 +188,8 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         dst_stem = slave_image.stem
         dst_image = image_dir / f"{dst_stem}.jpg"
         shutil.copy2(slave_image, dst_image)
+        with Image.open(dst_image) as image:
+            width, height = image.size
         for mask_path in item.mask_paths:
             suffix = mask_path.stem.removeprefix(item.stem)
             if mask_path.suffix == ".txt":
@@ -191,17 +205,20 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
                 ),
                 "task_name": source_record["task_name"],
                 "split": item.split,
-                "image_name": dst_image.name,
                 "image_path": dst_image.relative_to(output).as_posix(),
-                "gt_mask_path": (
-                    mask_dir / f"{dst_stem}.png"
-                ).relative_to(output).as_posix(),
-                "polygon_mask_path": (
-                    mask_dir / f"{dst_stem}_polygon.png"
-                ).relative_to(output).as_posix(),
-                "polyline_mask_path": (
-                    mask_dir / f"{dst_stem}_polyline.png"
-                ).relative_to(output).as_posix(),
+                "mask_paths": {
+                    "polygon": (
+                        mask_dir / f"{dst_stem}_polygon.png"
+                    ).relative_to(output).as_posix(),
+                    "polyline": (
+                        mask_dir / f"{dst_stem}_polyline.png"
+                    ).relative_to(output).as_posix(),
+                    "main": (mask_dir / f"{dst_stem}.png")
+                    .relative_to(output)
+                    .as_posix(),
+                },
+                "width": width,
+                "height": height,
                 "task_id": source_record["task_id"],
                 "job_id": source_record["job_id"],
                 "frame_id": source_record["frame_id"],
@@ -214,7 +231,8 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
             text += "\n"
         (split_dir / f"{split}.txt").write_text(text)
 
-    shutil.copy2(labelmap, output / "labelmap.txt")
+    for labelmap in labelmaps:
+        shutil.copy2(labelmap, output / labelmap.name)
     write_manifest(output, manifest_records)
     return len(matched)
 

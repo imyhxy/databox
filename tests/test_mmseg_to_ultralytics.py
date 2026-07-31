@@ -32,11 +32,14 @@ def _make_dataset(root):
                 "sample_id": f"cvat:12:21:{frame_id}",
                 "task_name": "task",
                 "split": split,
-                "image_name": image_name,
                 "image_path": f"JPEGImages/{image_name}",
-                "gt_mask_path": f"SegmentationClass/{stem}.png",
-                "polygon_mask_path": f"SegmentationClass/{stem}_polygon.png",
-                "polyline_mask_path": f"SegmentationClass/{stem}_polyline.png",
+                "mask_paths": {
+                    "polygon": f"SegmentationClass/{stem}_polygon.png",
+                    "polyline": f"SegmentationClass/{stem}_polyline.png",
+                    "main": f"SegmentationClass/{stem}.png",
+                },
+                "width": 2,
+                "height": 2,
                 "task_id": 12,
                 "job_id": 21,
                 "frame_id": frame_id,
@@ -90,9 +93,13 @@ def test_build_ultralytics_dataset_converts_palette_masks_to_l_mode(tmp_path):
 
     manifest = read_manifest(output)
     assert manifest[0]["image_path"] == "images/foo.jpg"
-    assert manifest[0]["gt_mask_path"] == "labels/foo.png"
-    assert manifest[0]["polygon_mask_path"] == "polygon_masks/foo.png"
-    assert manifest[0]["polyline_mask_path"] == "polyline_masks/foo.png"
+    assert manifest[0]["mask_paths"] == {
+        "polygon": "polygon_masks/foo.png",
+        "polyline": "polyline_masks/foo.png",
+        "main": "labels/foo.png",
+    }
+    assert manifest[0]["width"] == 2
+    assert manifest[0]["height"] == 2
 
 
 def test_build_ultralytics_dataset_rejects_missing_image(tmp_path):

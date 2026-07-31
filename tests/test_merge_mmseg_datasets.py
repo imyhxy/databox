@@ -8,7 +8,12 @@ def _make_dataset(root, name, stems=("one",)):
     (dataset / "JPEGImages").mkdir(parents=True)
     (dataset / "SegmentationClass").mkdir()
     (dataset / "ImageSets" / "Segmentation").mkdir(parents=True)
-    (dataset / "labelmap.txt").write_text("background:0,0,0::\n")
+    for filename in (
+        "labelmap.txt",
+        "labelmap_polygon.txt",
+        "labelmap_polyline.txt",
+    ):
+        (dataset / filename).write_text(f"{filename}\n")
     for stem in stems:
         (dataset / "JPEGImages" / f"{stem}.jpg").write_text(f"image-{stem}")
         (dataset / "SegmentationClass" / f"{stem}.png").write_text(f"mask-{stem}")
@@ -33,11 +38,14 @@ def _make_dataset(root, name, stems=("one",)):
                 "sample_id": f"cvat:{task_id}:2:{frame_id}",
                 "task_name": task_name,
                 "split": "train",
-                "image_name": f"{stem}.jpg",
                 "image_path": f"JPEGImages/{stem}.jpg",
-                "gt_mask_path": f"SegmentationClass/{stem}.png",
-                "polygon_mask_path": f"SegmentationClass/{stem}_polygon.png",
-                "polyline_mask_path": f"SegmentationClass/{stem}_polyline.png",
+                "mask_paths": {
+                    "polygon": f"SegmentationClass/{stem}_polygon.png",
+                    "polyline": f"SegmentationClass/{stem}_polyline.png",
+                    "main": f"SegmentationClass/{stem}.png",
+                },
+                "width": 640,
+                "height": 480,
                 "task_id": task_id,
                 "job_id": 2,
                 "frame_id": frame_id,
@@ -85,12 +93,19 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
         "JPEGImages/first__one.jpg",
         "JPEGImages/second__two.jpg",
     ]
-    assert records[0]["polygon_mask_path"] == (
-        "SegmentationClass/first__one_polygon.png"
-    )
-    assert records[0]["polyline_mask_path"] == (
-        "SegmentationClass/first__one_polyline.png"
-    )
+    assert records[0]["mask_paths"] == {
+        "polygon": "SegmentationClass/first__one_polygon.png",
+        "polyline": "SegmentationClass/first__one_polyline.png",
+        "main": "SegmentationClass/first__one.png",
+    }
+    assert records[0]["width"] == 640
+    assert records[0]["height"] == 480
+    for filename in (
+        "labelmap.txt",
+        "labelmap_polygon.txt",
+        "labelmap_polyline.txt",
+    ):
+        assert (output / filename).read_text() == f"{filename}\n"
 
 
 def test_merge_datasets_requires_branch_masks(tmp_path):
