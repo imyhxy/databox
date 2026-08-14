@@ -27,6 +27,9 @@ def _make_master(root):
     (master / "SegmentationClass" / "scene-a_0G_080_polyline.png").write_text(
         "mask-a-polyline"
     )
+    (master / "SegmentationClass" / "scene-a_0G_080_polygon.txt").write_text(
+        "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
+    )
     (master / "SegmentationClass" / "scene-a_0G_080_polyline.txt").write_text(
         "2 1.25 1.5 6.75 6.125\n"
     )
@@ -37,6 +40,7 @@ def _make_master(root):
     (master / "SegmentationClass" / "scene-b_0G_080_polyline.png").write_text(
         "mask-b-polyline"
     )
+    (master / "SegmentationClass" / "scene-b_0G_080_polygon.txt").write_text("")
     (master / "SegmentationClass" / "scene-b_0G_080_polyline.txt").write_text(
         "2 2.25 2.5 7.75 7.125\n"
     )
@@ -114,6 +118,9 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
         output / "SegmentationClass" / "scene-a_0G_100_polyline.png"
     ).read_text() == "mask-a-polyline"
     assert (
+        output / "SegmentationClass" / "scene-a_0G_100_polygon.txt"
+    ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
+    assert (
         output / "SegmentationClass" / "scene-a_0G_100_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125\n"
     assert (output / "SegmentationClass" / "scene-a_0G_120.png").read_text() == (
@@ -126,6 +133,9 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
         output / "SegmentationClass" / "scene-a_0G_120_polyline.png"
     ).read_text() == "mask-a-polyline"
     assert (
+        output / "SegmentationClass" / "scene-a_0G_120_polygon.txt"
+    ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
+    assert (
         output / "SegmentationClass" / "scene-a_0G_120_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125\n"
     assert (output / "SegmentationClass" / "scene-b_0G_100.png").read_text() == (
@@ -137,6 +147,9 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
     assert (
         output / "SegmentationClass" / "scene-b_0G_100_polyline.png"
     ).read_text() == "mask-b-polyline"
+    assert (
+        output / "SegmentationClass" / "scene-b_0G_100_polygon.txt"
+    ).read_text() == ""
     assert (
         output / "SegmentationClass" / "scene-b_0G_100_polyline.txt"
     ).read_text() == "2 2.25 2.5 7.75 7.125\n"
@@ -179,6 +192,9 @@ def test_build_slave_voc_dataset_rejects_duplicate_master_scene_keys(tmp_path):
     (master / "SegmentationClass" / "scene-a_0G_100_polyline.png").write_text(
         "mask-a-100-polyline"
     )
+    (master / "SegmentationClass" / "scene-a_0G_100_polygon.txt").write_text(
+        "1 1 1 2 1 2 2\n"
+    )
     (master / "SegmentationClass" / "scene-a_0G_100_polyline.txt").write_text(
         "2 1 1 2 2\n"
     )
@@ -208,6 +224,9 @@ def test_build_slave_voc_dataset_rejects_branch_mask_name_collisions(tmp_path):
     (
         master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_polyline.png"
     ).write_text("mask-a-colliding-stem-polyline")
+    (
+        master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_polygon.txt"
+    ).write_text("1 1 1 2 1 2 2\n")
     (
         master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_polyline.txt"
     ).write_text("2 1 1 2 2\n")

@@ -13,7 +13,7 @@ except ModuleNotFoundError:
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 MASK_EXTENSIONS = {".png", ".bmp", ".tif", ".tiff"}
 BRANCH_MASK_SUFFIXES = ("_polygon", "_polyline")
-POLYLINE_ANNOTATION_SUFFIX = "_polyline.txt"
+ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt")
 LABELMAP_FILENAMES = (
     "labelmap.txt",
     "labelmap_polygon.txt",
@@ -104,25 +104,27 @@ def merge_datasets(
         missing_images = sorted(split_stems - set(image_paths))
         extra_images = sorted(set(image_paths) - split_stems)
         missing_masks = sorted(split_stems - set(mask_paths))
-        missing_polyline_annotations = sorted(
-            stem
-            for stem in split_stems
-            if not (
-                input_root / "SegmentationClass" / f"{stem}{POLYLINE_ANNOTATION_SUFFIX}"
-            ).exists()
-        )
+        missing_annotations = {
+            suffix: sorted(
+                stem
+                for stem in split_stems
+                if not (input_root / "SegmentationClass" / f"{stem}{suffix}").exists()
+            )
+            for suffix in ANNOTATION_SUFFIXES
+        }
         if (
             missing_images
             or extra_images
             or missing_masks
-            or missing_polyline_annotations
+            or any(missing_annotations.values())
         ):
             raise ValueError(
                 f"{input_root} split files reference missing images, masks, or "
-                "polyline annotations: "
+                "shape annotations: "
                 f"images={missing_images[:5]}, extra_images={extra_images[:5]}, "
                 f"masks={missing_masks[:5]}, "
-                f"polylines={missing_polyline_annotations[:5]}"
+                f"polygon_annotations={missing_annotations['_polygon.txt'][:5]}, "
+                f"polyline_annotations={missing_annotations['_polyline.txt'][:5]}"
             )
 
         for stem, image_path in sorted(image_paths.items()):
@@ -143,13 +145,11 @@ def merge_datasets(
                     mask_path,
                     output_masks_dir / f"{merged_stem}{suffix}{mask_path.suffix}",
                 )
-            polyline_annotation_path = (
-                input_root / "SegmentationClass" / f"{stem}{POLYLINE_ANNOTATION_SUFFIX}"
-            )
-            shutil.copy2(
-                polyline_annotation_path,
-                output_masks_dir / f"{merged_stem}{POLYLINE_ANNOTATION_SUFFIX}",
-            )
+            for suffix in ANNOTATION_SUFFIXES:
+                shutil.copy2(
+                    input_root / "SegmentationClass" / f"{stem}{suffix}",
+                    output_masks_dir / f"{merged_stem}{suffix}",
+                )
             record = dict(manifest_by_stem[stem])
             output_image = output_images_dir / f"{merged_stem}{image_path.suffix}"
             record.update(
@@ -254,14 +254,14 @@ def _check_merged_mask_name_collisions(merged_stem: str, used_stems: set[str]) -
         f"{merged_stem}.png",
         f"{merged_stem}_polygon.png",
         f"{merged_stem}_polyline.png",
-        f"{merged_stem}{POLYLINE_ANNOTATION_SUFFIX}",
+        *(f"{merged_stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
     }
     for used_stem in used_stems:
         used_mask_names = {
             f"{used_stem}.png",
             f"{used_stem}_polygon.png",
             f"{used_stem}_polyline.png",
-            f"{used_stem}{POLYLINE_ANNOTATION_SUFFIX}",
+            *(f"{used_stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
         }
         overlap = sorted(output_mask_names & used_mask_names)
         if overlap:

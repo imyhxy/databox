@@ -19,7 +19,7 @@ except ModuleNotFoundError:
 
 BRIGHTNESS_SUFFIX = re.compile(r"_0G_\d{3}$")
 SPLITS = ("train", "val")
-POLYLINE_ANNOTATION_SUFFIX = "_polyline.txt"
+ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt")
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,7 @@ def build_master_index(master: Path) -> dict[str, MasterItem]:
                 mask_dir / f"{stem}.png",
                 mask_dir / f"{stem}_polygon.png",
                 mask_dir / f"{stem}_polyline.png",
-                mask_dir / f"{stem}{POLYLINE_ANNOTATION_SUFFIX}",
+                *(mask_dir / f"{stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
             )
             for mask_path in mask_paths:
                 if not mask_path.exists():
@@ -158,7 +158,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
             f"{slave_image.stem}.png",
             f"{slave_image.stem}_polygon.png",
             f"{slave_image.stem}_polyline.png",
-            f"{slave_image.stem}{POLYLINE_ANNOTATION_SUFFIX}",
+            *(f"{slave_image.stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
         ):
             if mask_name in seen_mask_names:
                 existing = seen_mask_names[mask_name]

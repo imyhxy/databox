@@ -23,6 +23,9 @@ def _make_dataset(root, name, stems=("one",)):
         (dataset / "SegmentationClass" / f"{stem}_polyline.png").write_text(
             f"polyline-{stem}"
         )
+        (dataset / "SegmentationClass" / f"{stem}_polygon.txt").write_text(
+            f"1 1.25 1.5 6.75 1.125 6.5 6.25 {stem}\n"
+        )
         (dataset / "SegmentationClass" / f"{stem}_polyline.txt").write_text(
             f"2 1.25 1.5 6.75 6.125 {stem}\n"
         )
@@ -71,6 +74,9 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
         output / "SegmentationClass" / "first__one_polyline.png"
     ).read_text() == "polyline-one"
     assert (
+        output / "SegmentationClass" / "first__one_polygon.txt"
+    ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25 one\n"
+    assert (
         output / "SegmentationClass" / "first__one_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125 one\n"
     assert (output / "SegmentationClass" / "second__two.png").read_text() == (
@@ -82,6 +88,9 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
     assert (
         output / "SegmentationClass" / "second__two_polyline.png"
     ).read_text() == "polyline-two"
+    assert (
+        output / "SegmentationClass" / "second__two_polygon.txt"
+    ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25 two\n"
     assert (
         output / "SegmentationClass" / "second__two_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125 two\n"
@@ -116,11 +125,11 @@ def test_merge_datasets_requires_branch_masks(tmp_path):
         merge_datasets([dataset], tmp_path / "merged")
 
 
-def test_merge_datasets_requires_polyline_annotations(tmp_path):
+def test_merge_datasets_requires_shape_annotations(tmp_path):
     dataset = _make_dataset(tmp_path, "dataset", stems=("one",))
-    (dataset / "SegmentationClass" / "one_polyline.txt").unlink()
+    (dataset / "SegmentationClass" / "one_polygon.txt").unlink()
 
-    with pytest.raises(ValueError, match="polyline annotations"):
+    with pytest.raises(ValueError, match="polygon_annotations"):
         merge_datasets([dataset], tmp_path / "merged")
 
 

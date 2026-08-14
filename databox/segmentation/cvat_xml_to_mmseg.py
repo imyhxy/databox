@@ -375,6 +375,28 @@ def polyline_annotation_lines(
     return lines
 
 
+def polygon_annotation_lines(
+    image_element: ET.Element,
+    categories: list[str],
+    polygon_categories: list[str],
+) -> list[str]:
+    lines = []
+    for child in image_element:
+        if child.tag != "polygon":
+            continue
+        label = child.attrib["label"]
+        if label not in polygon_categories:
+            continue
+        points = parse_float_points(child.attrib["points"])
+        if len(points) < 3:
+            raise ValueError(f"Polygon for label '{label}' must have at least 3 points")
+        values = [str(categories.index(label))]
+        for x, y in points:
+            values.extend((format_float(x), format_float(y)))
+        lines.append(" ".join(values))
+    return lines
+
+
 def image_path(image_element: ET.Element, annotations_path: Path) -> Path:
     path = Path(image_element.attrib["name"])
     if path.is_absolute():
@@ -798,6 +820,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
             dst_mask = ann_dir / f"{src.stem}.png"
             dst_polygon_mask = ann_dir / f"{src.stem}_polygon.png"
             dst_polyline_mask = ann_dir / f"{src.stem}_polyline.png"
+            dst_polygon_txt = ann_dir / f"{src.stem}_polygon.txt"
             dst_polyline_txt = ann_dir / f"{src.stem}_polyline.txt"
             shutil.copy2(src, dst_img)
 
@@ -853,6 +876,15 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 config.ignore_index,
                 config.ignore_palette,
             )
+            polygon_lines = polygon_annotation_lines(
+                image,
+                config.categories,
+                config.polygon_categories,
+            )
+            text = "\n".join(polygon_lines)
+            if text:
+                text += "\n"
+            dst_polygon_txt.write_text(text)
             polyline_lines = polyline_annotation_lines(
                 image,
                 config.categories,
