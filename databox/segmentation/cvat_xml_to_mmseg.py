@@ -43,6 +43,7 @@ class Config:
     palette: list[tuple[int, int, int]]
     polygon_categories: list[str]
     polyline_categories: list[str]
+    vehicle_label_dir: Path
     layout: str = "mmseg"
 
 
@@ -64,6 +65,12 @@ def parse_args():
     )
     parser.add_argument(
         "--output", type=str, required=True, help="Path to output directory"
+    )
+    parser.add_argument(
+        "--vehicle-label-dir",
+        type=str,
+        required=True,
+        help="Directory containing generated <stem>_vehicle.png/.txt pairs",
     )
     parser.add_argument(
         "--config", type=str, default="params.yaml", help="Path to params yaml"
@@ -162,6 +169,7 @@ def config_from_args(args) -> Config:
         polygon_categories = params.get("polygon_categories")
         polyline_categories = params.get("polyline_categories")
         layout = params.get("layout", getattr(args, "layout", "mmseg"))
+        vehicle_label_dir = getattr(args, "vehicle_label_dir", "vehicle")
     else:
         missing = [
             name
@@ -192,6 +200,7 @@ def config_from_args(args) -> Config:
         polygon_categories = args.polygon_categories
         polyline_categories = args.polyline_categories
         layout = getattr(args, "layout", "mmseg")
+        vehicle_label_dir = getattr(args, "vehicle_label_dir", "vehicle")
 
     missing = [
         name
@@ -218,6 +227,7 @@ def config_from_args(args) -> Config:
         palette=parse_palette(palette),
         polygon_categories=list(polygon_categories),
         polyline_categories=list(polyline_categories),
+        vehicle_label_dir=Path(vehicle_label_dir),
         layout=str(layout),
     )
 
@@ -546,6 +556,7 @@ def _check_unique_mask_stems(images: list[ET.Element]) -> None:
             f"{stem}.png",
             f"{stem}_polygon.png",
             f"{stem}_polyline.png",
+            f"{stem}_vehicle.png",
         ):
             if mask_name in seen_mask_names:
                 mask_duplicates.append(mask_name)
@@ -577,6 +588,7 @@ def clean_output(output: Path) -> None:
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
+        "labelmap_vehicle.txt",
         MANIFEST_FILENAME,
     ):
         path = output / filename
@@ -653,6 +665,11 @@ def _write_labelmaps(output: Path, config: Config) -> None:
         ),
     )
     _write_labelmap(
+        output / "labelmap_vehicle.txt",
+        ["background", "vehicle", "ignore"],
+        [(0, 0, 0), (255, 255, 255), (128, 128, 128)],
+    )
+    _write_labelmap(
         output / "labelmap_polyline.txt",
         ["background", *config.polyline_categories],
         branch_palette(
@@ -661,6 +678,31 @@ def _write_labelmaps(output: Path, config: Config) -> None:
             config.palette,
         ),
     )
+
+
+def _validate_vehicle_pair(vehicle_dir: Path, stem: str, size: tuple[int, int]) -> tuple[Path, Path]:
+    png = vehicle_dir / f"{stem}_vehicle.png"
+    txt = vehicle_dir / f"{stem}_vehicle.txt"
+    if not png.is_file() or not txt.is_file():
+        raise FileNotFoundError(f"Missing generated vehicle label pair for {stem}: {png}, {txt}")
+    with Image.open(png) as image:
+        if image.size != size or image.mode not in {"L", "P"}:
+            raise ValueError(f"Invalid generated vehicle mask for {stem}: expected {size}, got {image.size} {image.mode}")
+        values = set(np.unique(np.asarray(image)).tolist())
+    if not values <= {0, 1, 255}:
+        raise ValueError(f"Generated vehicle mask has unsupported values for {stem}: {sorted(values)}")
+    for line_number, line in enumerate(txt.read_text(encoding="utf-8").splitlines(), 1):
+        fields = line.split()
+        if not fields or fields[0] not in {"1", "255"} or len(fields) < 7 or len(fields) % 2 == 0:
+            raise ValueError(f"Invalid generated vehicle contour at {txt}:{line_number}")
+        try:
+            coordinates = [float(value) for value in fields[1:]]
+        except ValueError as exc:
+            raise ValueError(f"Invalid generated vehicle contour at {txt}:{line_number}") from exc
+        width, height = size
+        if any(coordinates[index] < 0 or coordinates[index] >= width for index in range(0, len(coordinates), 2)) or any(coordinates[index] < 0 or coordinates[index] >= height for index in range(1, len(coordinates), 2)):
+            raise ValueError(f"Generated vehicle contour is outside image bounds at {txt}:{line_number}")
+    return png, txt
 
 
 def save_palette_mask(
@@ -790,6 +832,19 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
         raise ValueError(f"No images found in {config.annotations}")
     _check_unique_mask_stems(images)
     task_metadata = parse_cvat_task_metadata(root)
+    if not config.vehicle_label_dir.is_dir():
+        raise FileNotFoundError(f"Vehicle label directory not found: {config.vehicle_label_dir}")
+    vehicle_pairs = {}
+    for image in images:
+        src = image_path(image, config.annotations)
+        if not src.is_file():
+            raise FileNotFoundError(f"Image not found: {src}")
+        width, height = image_dimensions(image)
+        vehicle_pairs[src.stem] = _validate_vehicle_pair(
+            config.vehicle_label_dir,
+            src.stem,
+            (width, height),
+        )
 
     splits = make_splits(images, config)
     clean_output(config.output)
@@ -822,7 +877,12 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
             dst_polyline_mask = ann_dir / f"{src.stem}_polyline.png"
             dst_polygon_txt = ann_dir / f"{src.stem}_polygon.txt"
             dst_polyline_txt = ann_dir / f"{src.stem}_polyline.txt"
+            vehicle_png, vehicle_txt = vehicle_pairs[src.stem]
+            dst_vehicle_mask = ann_dir / f"{src.stem}_vehicle.png"
+            dst_vehicle_txt = ann_dir / f"{src.stem}_vehicle.txt"
             shutil.copy2(src, dst_img)
+            shutil.copy2(vehicle_png, dst_vehicle_mask)
+            shutil.copy2(vehicle_txt, dst_vehicle_txt)
 
             mask = rasterize_image(
                 image,
@@ -910,6 +970,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                         "polyline": dst_polyline_mask.relative_to(
                             config.output
                         ).as_posix(),
+                        "vehicle": dst_vehicle_mask.relative_to(config.output).as_posix(),
                         "main": dst_mask.relative_to(config.output).as_posix(),
                     },
                     "width": width,

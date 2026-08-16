@@ -19,7 +19,8 @@ except ModuleNotFoundError:
 
 BRIGHTNESS_SUFFIX = re.compile(r"_0G_\d{3}$")
 SPLITS = ("train", "val")
-ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt")
+ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt", "_vehicle.txt")
+BRANCH_MASK_SUFFIXES = ("", "_polygon", "_polyline", "_vehicle")
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,7 @@ def clean_output(output: Path) -> None:
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
+        "labelmap_vehicle.txt",
     ):
         labelmap = output / filename
         if labelmap.exists():
@@ -89,9 +91,7 @@ def build_master_index(master: Path) -> dict[str, MasterItem]:
                 )
 
             mask_paths = (
-                mask_dir / f"{stem}.png",
-                mask_dir / f"{stem}_polygon.png",
-                mask_dir / f"{stem}_polyline.png",
+                *(mask_dir / f"{stem}{suffix}.png" for suffix in BRANCH_MASK_SUFFIXES),
                 *(mask_dir / f"{stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
             )
             for mask_path in mask_paths:
@@ -139,6 +139,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         master / "labelmap.txt",
         master / "labelmap_polygon.txt",
         master / "labelmap_polyline.txt",
+        master / "labelmap_vehicle.txt",
     ]
     for labelmap in labelmaps:
         if not labelmap.exists():
@@ -155,9 +156,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
             raise ValueError(f"Duplicate slave output stem: {slave_image.stem!r}")
         seen_output_stems.add(slave_image.stem)
         for mask_name in (
-            f"{slave_image.stem}.png",
-            f"{slave_image.stem}_polygon.png",
-            f"{slave_image.stem}_polyline.png",
+            *(f"{slave_image.stem}{suffix}.png" for suffix in BRANCH_MASK_SUFFIXES),
             *(f"{slave_image.stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
         ):
             if mask_name in seen_mask_names:
@@ -213,6 +212,7 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
                     "polyline": (
                         mask_dir / f"{dst_stem}_polyline.png"
                     ).relative_to(output).as_posix(),
+                    "vehicle": (mask_dir / f"{dst_stem}_vehicle.png").relative_to(output).as_posix(),
                     "main": (mask_dir / f"{dst_stem}.png")
                     .relative_to(output)
                     .as_posix(),

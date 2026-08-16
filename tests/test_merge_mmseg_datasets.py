@@ -12,6 +12,7 @@ def _make_dataset(root, name, stems=("one",)):
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
+        "labelmap_vehicle.txt",
     ):
         (dataset / filename).write_text(f"{filename}\n")
     for stem in stems:
@@ -23,11 +24,17 @@ def _make_dataset(root, name, stems=("one",)):
         (dataset / "SegmentationClass" / f"{stem}_polyline.png").write_text(
             f"polyline-{stem}"
         )
+        (dataset / "SegmentationClass" / f"{stem}_vehicle.png").write_text(
+            f"vehicle-{stem}"
+        )
         (dataset / "SegmentationClass" / f"{stem}_polygon.txt").write_text(
             f"1 1.25 1.5 6.75 1.125 6.5 6.25 {stem}\n"
         )
         (dataset / "SegmentationClass" / f"{stem}_polyline.txt").write_text(
             f"2 1.25 1.5 6.75 6.125 {stem}\n"
+        )
+        (dataset / "SegmentationClass" / f"{stem}_vehicle.txt").write_text(
+            "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
         )
     (dataset / "ImageSets" / "Segmentation" / "train.txt").write_text(
         "".join(f"{stem}\n" for stem in stems)
@@ -45,6 +52,7 @@ def _make_dataset(root, name, stems=("one",)):
                 "mask_paths": {
                     "polygon": f"SegmentationClass/{stem}_polygon.png",
                     "polyline": f"SegmentationClass/{stem}_polyline.png",
+                    "vehicle": f"SegmentationClass/{stem}_vehicle.png",
                     "main": f"SegmentationClass/{stem}.png",
                 },
                 "width": 640,
@@ -73,12 +81,14 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
     assert (
         output / "SegmentationClass" / "first__one_polyline.png"
     ).read_text() == "polyline-one"
+    assert (output / "SegmentationClass" / "first__one_vehicle.png").read_text() == "vehicle-one"
     assert (
         output / "SegmentationClass" / "first__one_polygon.txt"
     ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25 one\n"
     assert (
         output / "SegmentationClass" / "first__one_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125 one\n"
+    assert (output / "SegmentationClass" / "first__one_vehicle.txt").read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
     assert (output / "SegmentationClass" / "second__two.png").read_text() == (
         "mask-two"
     )
@@ -105,6 +115,7 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
     assert records[0]["mask_paths"] == {
         "polygon": "SegmentationClass/first__one_polygon.png",
         "polyline": "SegmentationClass/first__one_polyline.png",
+        "vehicle": "SegmentationClass/first__one_vehicle.png",
         "main": "SegmentationClass/first__one.png",
     }
     assert records[0]["width"] == 640
@@ -113,6 +124,7 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
+        "labelmap_vehicle.txt",
     ):
         assert (output / filename).read_text() == f"{filename}\n"
 
