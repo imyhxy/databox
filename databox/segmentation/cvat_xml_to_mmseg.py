@@ -680,28 +680,53 @@ def _write_labelmaps(output: Path, config: Config) -> None:
     )
 
 
-def _validate_vehicle_pair(vehicle_dir: Path, stem: str, size: tuple[int, int]) -> tuple[Path, Path]:
+def _validate_vehicle_pair(
+    vehicle_dir: Path, stem: str, size: tuple[int, int]
+) -> tuple[Path, Path]:
     png = vehicle_dir / f"{stem}_vehicle.png"
     txt = vehicle_dir / f"{stem}_vehicle.txt"
     if not png.is_file() or not txt.is_file():
-        raise FileNotFoundError(f"Missing generated vehicle label pair for {stem}: {png}, {txt}")
+        raise FileNotFoundError(
+            f"Missing generated vehicle label pair for {stem}: {png}, {txt}"
+        )
     with Image.open(png) as image:
         if image.size != size or image.mode not in {"L", "P"}:
-            raise ValueError(f"Invalid generated vehicle mask for {stem}: expected {size}, got {image.size} {image.mode}")
+            raise ValueError(
+                f"Invalid generated vehicle mask for {stem}: expected {size}, got {image.size} {image.mode}"
+            )
         values = set(np.unique(np.asarray(image)).tolist())
     if not values <= {0, 1, 255}:
-        raise ValueError(f"Generated vehicle mask has unsupported values for {stem}: {sorted(values)}")
+        raise ValueError(
+            f"Generated vehicle mask has unsupported values for {stem}: {sorted(values)}"
+        )
     for line_number, line in enumerate(txt.read_text(encoding="utf-8").splitlines(), 1):
         fields = line.split()
-        if not fields or fields[0] not in {"1", "255"} or len(fields) < 7 or len(fields) % 2 == 0:
-            raise ValueError(f"Invalid generated vehicle contour at {txt}:{line_number}")
+        if (
+            not fields
+            or fields[0] not in {"1", "255"}
+            or len(fields) < 7
+            or len(fields) % 2 == 0
+        ):
+            raise ValueError(
+                f"Invalid generated vehicle contour at {txt}:{line_number}"
+            )
         try:
             coordinates = [float(value) for value in fields[1:]]
         except ValueError as exc:
-            raise ValueError(f"Invalid generated vehicle contour at {txt}:{line_number}") from exc
+            raise ValueError(
+                f"Invalid generated vehicle contour at {txt}:{line_number}"
+            ) from exc
         width, height = size
-        if any(coordinates[index] < 0 or coordinates[index] >= width for index in range(0, len(coordinates), 2)) or any(coordinates[index] < 0 or coordinates[index] >= height for index in range(1, len(coordinates), 2)):
-            raise ValueError(f"Generated vehicle contour is outside image bounds at {txt}:{line_number}")
+        if any(
+            coordinates[index] < 0 or coordinates[index] >= width
+            for index in range(0, len(coordinates), 2)
+        ) or any(
+            coordinates[index] < 0 or coordinates[index] >= height
+            for index in range(1, len(coordinates), 2)
+        ):
+            raise ValueError(
+                f"Generated vehicle contour is outside image bounds at {txt}:{line_number}"
+            )
     return png, txt
 
 
@@ -784,9 +809,7 @@ def _required_int_text(element: ET.Element, tag: str, label: str) -> int:
 
 def job_id_for_frame(metadata: CvatTaskMetadata, frame_id: int) -> int:
     matches = [
-        job_id
-        for start, stop, job_id in metadata.segments
-        if start <= frame_id <= stop
+        job_id for start, stop, job_id in metadata.segments if start <= frame_id <= stop
     ]
     if len(matches) != 1:
         raise ValueError(
@@ -833,7 +856,9 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
     _check_unique_mask_stems(images)
     task_metadata = parse_cvat_task_metadata(root)
     if not config.vehicle_label_dir.is_dir():
-        raise FileNotFoundError(f"Vehicle label directory not found: {config.vehicle_label_dir}")
+        raise FileNotFoundError(
+            f"Vehicle label directory not found: {config.vehicle_label_dir}"
+        )
     vehicle_pairs = {}
     for image in images:
         src = image_path(image, config.annotations)
@@ -957,9 +982,7 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
 
             manifest_records.append(
                 {
-                    "sample_id": (
-                        f"cvat_{task_metadata.task_id}_{job_id}_{frame_id}"
-                    ),
+                    "sample_id": (f"cvat_{task_metadata.task_id}_{job_id}_{frame_id}"),
                     "task_name": task_metadata.task_name,
                     "split": split_name,
                     "image_path": dst_img.relative_to(config.output).as_posix(),
@@ -970,7 +993,9 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                         "polyline": dst_polyline_mask.relative_to(
                             config.output
                         ).as_posix(),
-                        "vehicle": dst_vehicle_mask.relative_to(config.output).as_posix(),
+                        "vehicle": dst_vehicle_mask.relative_to(
+                            config.output
+                        ).as_posix(),
                         "main": dst_mask.relative_to(config.output).as_posix(),
                     },
                     "width": width,

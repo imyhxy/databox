@@ -475,7 +475,7 @@ def test_convert_writes_mmseg_layout(tmp_path):
           <image id="1" name="two.jpg" width="8" height="8">
             <polyline label="line" points="1.25,1.5;6.75,6.125" />
           </image>
-        </annotations>"""
+        </annotations>""",
     )
 
     out = tmp_path / "prepared"
@@ -604,7 +604,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
           <image id="1" name="two.png" width="8" height="8">
             <polyline label="line" points="1.25,1.5;6.75,6.125" />
           </image>
-        </annotations>"""
+        </annotations>""",
     )
 
     out = tmp_path / "prepared"
@@ -631,9 +631,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
 
     copied_images = sorted(path.name for path in (out / "JPEGImages").glob("*"))
     masks = sorted(path.name for path in (out / "SegmentationClass").glob("*.png"))
-    shape_txts = sorted(
-        path.name for path in (out / "SegmentationClass").glob("*.txt")
-    )
+    shape_txts = sorted(path.name for path in (out / "SegmentationClass").glob("*.txt"))
     assert copied_images == ["one.jpg", "two.jpg"]
     assert masks == [
         "one.png",
@@ -739,7 +737,7 @@ def test_convert_rejects_branch_mask_name_collisions(tmp_path):
           <image id="1" name="one_polygon.jpg" width="8" height="8">
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
-        </annotations>"""
+        </annotations>""",
     )
 
     with pytest.raises(ValueError, match="overwrite branch masks"):
@@ -767,7 +765,7 @@ def test_strict_categories_allows_background_not_in_cvat(tmp_path):
           <image id="1" name="two.jpg" width="8" height="8">
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
-        </annotations>"""
+        </annotations>""",
     )
 
     vehicle_labels = _write_vehicle_labels(tmp_path, "one", "two")
@@ -808,7 +806,7 @@ def test_strict_categories_rejects_extra_non_background_label(tmp_path):
           <image id="1" name="two.jpg" width="8" height="8">
             <polygon label="object" points="1,1;6,1;6,6;1,6" />
           </image>
-        </annotations>"""
+        </annotations>""",
     )
 
     with pytest.raises(ValueError, match="Config labels missing from CVAT"):

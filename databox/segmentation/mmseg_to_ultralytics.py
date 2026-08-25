@@ -106,9 +106,7 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
             {
                 "image_path": output_image.relative_to(output_root).as_posix(),
                 "mask_paths": {
-                    "polygon": output_polygon_mask.relative_to(
-                        output_root
-                    ).as_posix(),
+                    "polygon": output_polygon_mask.relative_to(output_root).as_posix(),
                     "polyline": output_polyline_mask.relative_to(
                         output_root
                     ).as_posix(),
@@ -198,7 +196,13 @@ def _validate_split_stems(
 
 
 def _clean_output(output_root: Path) -> None:
-    for dirname in ("images", "labels", "polygon_masks", "polyline_masks", "vehicle_masks"):
+    for dirname in (
+        "images",
+        "labels",
+        "polygon_masks",
+        "polyline_masks",
+        "vehicle_masks",
+    ):
         path = output_root / dirname
         if path.exists():
             shutil.rmtree(path)

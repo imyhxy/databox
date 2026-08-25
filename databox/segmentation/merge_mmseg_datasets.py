@@ -157,17 +157,15 @@ def merge_datasets(
                 {
                     "image_path": output_image.relative_to(output_root).as_posix(),
                     "mask_paths": {
-                        "polygon": (
-                            output_masks_dir / f"{merged_stem}_polygon.png"
-                        )
+                        "polygon": (output_masks_dir / f"{merged_stem}_polygon.png")
                         .relative_to(output_root)
                         .as_posix(),
-                        "polyline": (
-                            output_masks_dir / f"{merged_stem}_polyline.png"
-                        )
+                        "polyline": (output_masks_dir / f"{merged_stem}_polyline.png")
                         .relative_to(output_root)
                         .as_posix(),
-                        "vehicle": (output_masks_dir / f"{merged_stem}_vehicle.png").relative_to(output_root).as_posix(),
+                        "vehicle": (output_masks_dir / f"{merged_stem}_vehicle.png")
+                        .relative_to(output_root)
+                        .as_posix(),
                         "main": (output_masks_dir / f"{merged_stem}.png")
                         .relative_to(output_root)
                         .as_posix(),
@@ -205,8 +203,7 @@ def _validate_inputs(input_roots: list[Path]) -> None:
 def _read_common_labelmaps(input_roots: list[Path]) -> dict[str, str]:
     first_root = input_roots[0]
     first_labelmaps = {
-        filename: (first_root / filename).read_text()
-        for filename in LABELMAP_FILENAMES
+        filename: (first_root / filename).read_text() for filename in LABELMAP_FILENAMES
     }
     for input_root in input_roots[1:]:
         for filename in LABELMAP_FILENAMES:
@@ -263,7 +260,7 @@ def _check_merged_mask_name_collisions(merged_stem: str, used_stems: set[str]) -
         used_mask_names = {
             f"{used_stem}.png",
             f"{used_stem}_polygon.png",
-        f"{used_stem}_polyline.png",
+            f"{used_stem}_polyline.png",
             f"{used_stem}_vehicle.png",
             *(f"{used_stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
         }

@@ -81,14 +81,18 @@ def test_merge_datasets_copies_base_polygon_and_polyline_masks(tmp_path):
     assert (
         output / "SegmentationClass" / "first__one_polyline.png"
     ).read_text() == "polyline-one"
-    assert (output / "SegmentationClass" / "first__one_vehicle.png").read_text() == "vehicle-one"
+    assert (
+        output / "SegmentationClass" / "first__one_vehicle.png"
+    ).read_text() == "vehicle-one"
     assert (
         output / "SegmentationClass" / "first__one_polygon.txt"
     ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25 one\n"
     assert (
         output / "SegmentationClass" / "first__one_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125 one\n"
-    assert (output / "SegmentationClass" / "first__one_vehicle.txt").read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
+    assert (
+        output / "SegmentationClass" / "first__one_vehicle.txt"
+    ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
     assert (output / "SegmentationClass" / "second__two.png").read_text() == (
         "mask-two"
     )

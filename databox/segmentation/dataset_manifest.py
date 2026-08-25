@@ -118,9 +118,7 @@ def validate_manifest_records(
         image_relative_path = _validate_relative_path(
             record["image_path"], "image_path", index
         )
-        if validate_paths and not (
-            dataset_root / Path(image_relative_path)
-        ).is_file():
+        if validate_paths and not (dataset_root / Path(image_relative_path)).is_file():
             raise FileNotFoundError(
                 f"Manifest record {index} references missing image_path: "
                 f"{dataset_root / Path(image_relative_path)}"

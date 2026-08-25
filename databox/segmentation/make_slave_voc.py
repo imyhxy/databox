@@ -199,20 +199,20 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         source_record = item.manifest_record
         manifest_records.append(
             {
-                "sample_id": (
-                    f"{source_record['sample_id']}_derived_{dst_stem}"
-                ),
+                "sample_id": (f"{source_record['sample_id']}_derived_{dst_stem}"),
                 "task_name": source_record["task_name"],
                 "split": item.split,
                 "image_path": dst_image.relative_to(output).as_posix(),
                 "mask_paths": {
-                    "polygon": (
-                        mask_dir / f"{dst_stem}_polygon.png"
-                    ).relative_to(output).as_posix(),
-                    "polyline": (
-                        mask_dir / f"{dst_stem}_polyline.png"
-                    ).relative_to(output).as_posix(),
-                    "vehicle": (mask_dir / f"{dst_stem}_vehicle.png").relative_to(output).as_posix(),
+                    "polygon": (mask_dir / f"{dst_stem}_polygon.png")
+                    .relative_to(output)
+                    .as_posix(),
+                    "polyline": (mask_dir / f"{dst_stem}_polyline.png")
+                    .relative_to(output)
+                    .as_posix(),
+                    "vehicle": (mask_dir / f"{dst_stem}_vehicle.png")
+                    .relative_to(output)
+                    .as_posix(),
                     "main": (mask_dir / f"{dst_stem}.png")
                     .relative_to(output)
                     .as_posix(),

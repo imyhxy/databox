@@ -10,8 +10,8 @@ def _record(stem, *, split, frame_id):
         "image_path": f"images/{stem}.jpg",
         "mask_paths": {
             "polygon": f"polygon_masks/{stem}.png",
-        "polyline": f"polyline_masks/{stem}.png",
-        "vehicle": f"vehicle_masks/{stem}.png",
+            "polyline": f"polyline_masks/{stem}.png",
+            "vehicle": f"vehicle_masks/{stem}.png",
             "main": f"labels/{stem}.png",
         },
         "width": 640,
