@@ -1,25 +1,18 @@
-# Example DVC stage for converting Cityscapes instance-ID masks into an
-# Ultralytics instance segmentation dataset.
-#
-# The converter intentionally reads `input_root` and `output_root` from the
-# command line, so those paths stay explicit in the stage definition.
-# Duplicate this stage with a different `--param-name` / `--output-root` pair
-# if you also want to materialize the `vehicle_focus` variant from params.yaml.
-
 stages:
-  cityscapes_to_ultralytics_instance:
+  cvat_xml_to_ultralytics_instance:
     cmd: >-
-      python -m databox.segmentation.cityscapes_to_ultralytics_instance
-      --input-root /home/fkwong/datasets/004_cityscapes/data/raw
-      --output-root /home/fkwong/datasets/004_cityscapes/data/ultralytics-instance
+      python -m databox.segmentation.cvat_xml_to_ultralytics_instance
+      --input-root /home/fkwong/datasets/012_vehicle-insts/data/raw/bev_260708-260729
+      --output-root /home/fkwong/datasets/012_vehicle-insts/data/prepared/ultralytics
       --config params.yaml
-      --param-name cityscapes_to_ultralytics_instance
+      --param-name cvat_xml_to_ultralytics_instance
     deps:
-      - databox/segmentation/cityscapes_to_ultralytics_instance.py
-      - /home/fkwong/datasets/004_cityscapes/data/raw/gtFine
-      - /home/fkwong/datasets/004_cityscapes/data/raw/leftImg8bit
+      - databox/segmentation/cvat_xml_to_ultralytics_instance.py
+      - /home/fkwong/datasets/012_vehicle-insts/data/raw/bev_260708-260729
       - params.yaml
     params:
-      - cityscapes_to_ultralytics_instance
+      - cvat_xml_to_ultralytics_instance
     outs:
-      - /home/fkwong/datasets/004_cityscapes/data/ultralytics-instance
+      - /home/fkwong/datasets/012_vehicle-insts/data/prepared/ultralytics/images
+      - /home/fkwong/datasets/012_vehicle-insts/data/prepared/ultralytics/labels
+      - /home/fkwong/datasets/012_vehicle-insts/data/prepared/ultralytics/data.yaml

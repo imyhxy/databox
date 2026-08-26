@@ -1,53 +1,6 @@
-# Example parameters for databox/segmentation/cityscapes_to_ultralytics_instance.py
-# Usage:
-#   python -m databox.segmentation.cityscapes_to_ultralytics_instance \
-#     --input-root /home/fkwong/datasets/004_cityscapes/data/raw \
-#     --output-root /home/fkwong/datasets/004_cityscapes/data/ultralytics-instance \
-#     --config params.yaml \
-#     --param-name cityscapes_to_ultralytics_instance
-#
-# Or choose the remapped variant:
-#   python -m databox.segmentation.cityscapes_to_ultralytics_instance \
-#     --input-root /home/fkwong/datasets/004_cityscapes/data/raw \
-#     --output-root /home/fkwong/datasets/004_cityscapes/data/ultralytics-instance-vehicle-focus \
-#     --config params.yaml \
-#     --param-name cityscapes_to_ultralytics_instance_vehicle_focus
-
-cityscapes_to_ultralytics_instance:
-  splits:
-    - train
-    - val
-  categories:
-    - person
-    - rider
-    - car
-    - truck
-    - bus
-    - train
-    - motorcycle
-    - bicycle
-  category_map: {}
-
-cityscapes_to_ultralytics_instance_vehicle_focus:
-  splits:
-    - train
-    - val
-  categories:
-    - car
-    - truck
-    - bus
-    - train
-    - motorcycle
-    - bicycle
-  category_map:
-    car: vehicle
-    truck: vehicle
-    bus: vehicle
-    train: rail_vehicle
-    motorcycle: two_wheeler
-    bicycle: two_wheeler
-
-# Example parameters for databox/segmentation/cvat_xml_to_ultralytics_instance.py
+# Parameters for databox/segmentation/cvat_xml_to_ultralytics_instance.py.
+# Input and output roots remain explicit in dvc.yaml; conversion choices are
+# tracked by DVC here.
 cvat_xml_to_ultralytics_instance:
   categories:
     - vehicle
