@@ -1,12 +1,20 @@
 # Author: fkwong
 # File: cvat_xml_to_mmseg.py
 # Date: 5/19/26
-"""Convert CVAT annotations.xml into a semantic segmentation dataset."""
+"""Convert CVAT annotations.xml into a semantic segmentation dataset.
+
+Self-intersection repair is opt-in and affects only the exported polygon and
+polyline ``.txt`` sidecars.  Repeated vertices are removed from those
+sidecars before optional repair.  Raster masks continue to use the original
+CVAT coordinates.
+"""
 
 import argparse
+import logging
 import random
 import shutil
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +22,15 @@ import cv2
 import numpy as np
 import yaml
 from PIL import Image
+
+try:
+    from databox.segmentation.cvat_shape_repair import (
+        ShapeKind,
+        deduplicate_points,
+        repair_shape,
+    )
+except ModuleNotFoundError:
+    from cvat_shape_repair import ShapeKind, deduplicate_points, repair_shape
 
 try:
     from databox.segmentation.dataset_manifest import (
@@ -26,6 +43,7 @@ except ModuleNotFoundError:
 PARAM_NAME = "cvat_xml_to_mmseg"
 LAYOUTS = {"mmseg", "voc"}
 SHAPE_TAGS = {"polygon", "polyline", "box", "ellipse", "mask", "points", "skeleton"}
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -45,6 +63,12 @@ class Config:
     polyline_categories: list[str]
     vehicle_label_dir: Path
     layout: str = "mmseg"
+    repair_self_intersections: bool = False
+    # Polygon validation compares filled pixels; polyline validation compares
+    # centerline pixels and therefore has an independent limit.
+    self_intersection_threshold: int = 10
+    polyline_diff_threshold: int = 10
+    repair_polyline_width: int = 1
 
 
 @dataclass(frozen=True)
@@ -54,7 +78,7 @@ class CvatTaskMetadata:
     segments: tuple[tuple[int, int, int], ...]
 
 
-def parse_args():
+def parse_args(argv: Sequence[str] | None = None):
     parser = argparse.ArgumentParser()
     exclusive_group = parser.add_mutually_exclusive_group(required=True)
     exclusive_group.add_argument("--yaml", action="store_true", help="use params.yaml")
@@ -127,6 +151,38 @@ def parse_args():
         help="Polyline drawing width in pixels, from 1 to 20",
     )
     parser.add_argument(
+        "--repair-polyline-width",
+        type=int,
+        default=None,
+        help="Polyline width used only to validate self-intersection repairs, from 1 to 20",
+    )
+    repair_group = parser.add_mutually_exclusive_group()
+    repair_group.add_argument(
+        "--repair-self-intersections",
+        dest="repair_self_intersections",
+        action="store_true",
+        help="Repair small polygon/polyline self-intersections in exported .txt labels",
+    )
+    repair_group.add_argument(
+        "--no-repair-self-intersections",
+        dest="repair_self_intersections",
+        action="store_false",
+        help="Disable self-intersection repair even when enabled in the YAML config",
+    )
+    parser.set_defaults(repair_self_intersections=None)
+    parser.add_argument(
+        "--self-intersection-threshold",
+        type=int,
+        default=None,
+        help="Maximum changed filled pixels for an automatic polygon repair",
+    )
+    parser.add_argument(
+        "--polyline-diff-threshold",
+        type=int,
+        default=None,
+        help="Maximum changed centerline pixels for an automatic polyline repair",
+    )
+    parser.add_argument(
         "--polygon-categories",
         type=str,
         default=None,
@@ -148,10 +204,14 @@ def parse_args():
             "except background"
         ),
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def config_from_args(args) -> Config:
+    cli_repair = getattr(args, "repair_self_intersections", None)
+    cli_threshold = getattr(args, "self_intersection_threshold", None)
+    cli_polyline_threshold = getattr(args, "polyline_diff_threshold", None)
+    cli_repair_polyline_width = getattr(args, "repair_polyline_width", None)
     if args.yaml:
         with open(args.config) as f:
             params = yaml.safe_load(f)[args.param_name]
@@ -170,6 +230,26 @@ def config_from_args(args) -> Config:
         polyline_categories = params.get("polyline_categories")
         layout = params.get("layout", getattr(args, "layout", "mmseg"))
         vehicle_label_dir = getattr(args, "vehicle_label_dir", "vehicle")
+        repair_self_intersections = (
+            cli_repair
+            if cli_repair is not None
+            else params.get("repair_self_intersections", False)
+        )
+        self_intersection_threshold = (
+            cli_threshold
+            if cli_threshold is not None
+            else params.get("self_intersection_threshold", 10)
+        )
+        polyline_diff_threshold = (
+            cli_polyline_threshold
+            if cli_polyline_threshold is not None
+            else params.get("polyline_diff_threshold", 10)
+        )
+        repair_polyline_width = (
+            cli_repair_polyline_width
+            if cli_repair_polyline_width is not None
+            else params.get("repair_polyline_width", 1)
+        )
     else:
         missing = [
             name
@@ -201,6 +281,14 @@ def config_from_args(args) -> Config:
         polyline_categories = args.polyline_categories
         layout = getattr(args, "layout", "mmseg")
         vehicle_label_dir = getattr(args, "vehicle_label_dir", "vehicle")
+        repair_self_intersections = cli_repair if cli_repair is not None else False
+        self_intersection_threshold = cli_threshold if cli_threshold is not None else 10
+        polyline_diff_threshold = (
+            cli_polyline_threshold if cli_polyline_threshold is not None else 10
+        )
+        repair_polyline_width = (
+            cli_repair_polyline_width if cli_repair_polyline_width is not None else 1
+        )
 
     missing = [
         name
@@ -229,7 +317,26 @@ def config_from_args(args) -> Config:
         polyline_categories=list(polyline_categories),
         vehicle_label_dir=Path(vehicle_label_dir),
         layout=str(layout),
+        repair_self_intersections=_parse_bool(
+            repair_self_intersections,
+            name="repair_self_intersections",
+        ),
+        self_intersection_threshold=int(self_intersection_threshold),
+        polyline_diff_threshold=int(polyline_diff_threshold),
+        repair_polyline_width=int(repair_polyline_width),
     )
+
+
+def _parse_bool(value, *, name: str) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"true", "yes", "on", "1"}:
+            return True
+        if normalized in {"false", "no", "off", "0"}:
+            return False
+    raise ValueError(f"{name} must be a boolean, got {value!r}")
 
 
 def parse_palette_color(color, name: str = "palette color") -> tuple[int, int, int]:
@@ -279,6 +386,40 @@ def validate_config(config: Config) -> None:
     if not 1 <= config.polyline_width <= 20:
         raise ValueError(
             f"polyline_width must be between 1 and 20, got {config.polyline_width}"
+        )
+    if not isinstance(config.repair_self_intersections, bool):
+        raise ValueError(
+            "repair_self_intersections must be a boolean, "
+            f"got {config.repair_self_intersections!r}"
+        )
+    if not isinstance(config.self_intersection_threshold, int) or isinstance(
+        config.self_intersection_threshold, bool
+    ):
+        raise ValueError(
+            "self_intersection_threshold must be an integer, "
+            f"got {config.self_intersection_threshold!r}"
+        )
+    if config.self_intersection_threshold < 0:
+        raise ValueError(
+            "self_intersection_threshold must be non-negative, "
+            f"got {config.self_intersection_threshold}"
+        )
+    if not isinstance(config.polyline_diff_threshold, int) or isinstance(
+        config.polyline_diff_threshold, bool
+    ):
+        raise ValueError(
+            "polyline_diff_threshold must be an integer, "
+            f"got {config.polyline_diff_threshold!r}"
+        )
+    if config.polyline_diff_threshold < 0:
+        raise ValueError(
+            "polyline_diff_threshold must be non-negative, "
+            f"got {config.polyline_diff_threshold}"
+        )
+    if not 1 <= config.repair_polyline_width <= 20:
+        raise ValueError(
+            "repair_polyline_width must be between 1 and 20, "
+            f"got {config.repair_polyline_width}"
         )
     if not 0 <= config.ignore_index <= 255:
         raise ValueError(
@@ -365,19 +506,37 @@ def polyline_annotation_lines(
     image_element: ET.Element,
     categories: list[str],
     polyline_categories: list[str],
+    *,
+    repair_self_intersections: bool = False,
+    polyline_diff_threshold: int = 10,
+    repair_polyline_width: int = 1,
 ) -> list[str]:
     lines = []
-    for child in image_element:
+    width, height = (
+        image_dimensions(image_element) if repair_self_intersections else (0, 0)
+    )
+    for shape_index, child in enumerate(image_element):
         if child.tag != "polyline":
             continue
         label = child.attrib["label"]
         if label not in polyline_categories:
             continue
-        points = parse_float_points(child.attrib["points"])
+        points = deduplicate_points(parse_float_points(child.attrib["points"]))
         if len(points) < 2:
             raise ValueError(
                 f"Polyline for label '{label}' must have at least 2 points"
             )
+        points = _maybe_repair_points(
+            points,
+            shape_kind="polyline",
+            image_name=image_element.attrib.get("name", "<unnamed>"),
+            shape_index=shape_index,
+            width=width,
+            height=height,
+            enabled=repair_self_intersections,
+            threshold=polyline_diff_threshold,
+            polyline_width=repair_polyline_width,
+        )
         values = [str(categories.index(label))]
         for x, y in points:
             values.extend((format_float(x), format_float(y)))
@@ -389,22 +548,75 @@ def polygon_annotation_lines(
     image_element: ET.Element,
     categories: list[str],
     polygon_categories: list[str],
+    *,
+    repair_self_intersections: bool = False,
+    self_intersection_threshold: int = 10,
 ) -> list[str]:
     lines = []
-    for child in image_element:
+    width, height = (
+        image_dimensions(image_element) if repair_self_intersections else (0, 0)
+    )
+    for shape_index, child in enumerate(image_element):
         if child.tag != "polygon":
             continue
         label = child.attrib["label"]
         if label not in polygon_categories:
             continue
-        points = parse_float_points(child.attrib["points"])
+        points = deduplicate_points(parse_float_points(child.attrib["points"]))
         if len(points) < 3:
             raise ValueError(f"Polygon for label '{label}' must have at least 3 points")
+        points = _maybe_repair_points(
+            points,
+            shape_kind="polygon",
+            image_name=image_element.attrib.get("name", "<unnamed>"),
+            shape_index=shape_index,
+            width=width,
+            height=height,
+            enabled=repair_self_intersections,
+            threshold=self_intersection_threshold,
+        )
         values = [str(categories.index(label))]
         for x, y in points:
             values.extend((format_float(x), format_float(y)))
         lines.append(" ".join(values))
     return lines
+
+
+def _maybe_repair_points(
+    points: list[tuple[float, float]],
+    *,
+    shape_kind: ShapeKind,
+    image_name: str,
+    shape_index: int,
+    width: int,
+    height: int,
+    enabled: bool,
+    threshold: int,
+    polyline_width: int = 1,
+) -> np.ndarray:
+    array = deduplicate_points(points)
+    if not enabled:
+        return array
+
+    result = repair_shape(
+        array,
+        shape_kind,
+        (width, height),
+        threshold,
+        polyline_width=polyline_width,
+    )
+    if result.needs_review:
+        LOGGER.warning(
+            "Self-intersection in %s shape #%d of %s was not automatically "
+            "repaired (best pixel diff: %s, threshold: %s); manual review "
+            "is required, so normalized .txt points were kept",
+            shape_kind,
+            shape_index,
+            image_name,
+            result.diff_pixels if result.diff_pixels is not None else "unavailable",
+            threshold,
+        )
+    return result.points
 
 
 def image_path(image_element: ET.Element, annotations_path: Path) -> Path:
@@ -965,6 +1177,8 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 image,
                 config.categories,
                 config.polygon_categories,
+                repair_self_intersections=config.repair_self_intersections,
+                self_intersection_threshold=config.self_intersection_threshold,
             )
             text = "\n".join(polygon_lines)
             if text:
@@ -974,6 +1188,9 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 image,
                 config.categories,
                 config.polyline_categories,
+                repair_self_intersections=config.repair_self_intersections,
+                polyline_diff_threshold=config.polyline_diff_threshold,
+                repair_polyline_width=config.repair_polyline_width,
             )
             text = "\n".join(polyline_lines)
             if text:

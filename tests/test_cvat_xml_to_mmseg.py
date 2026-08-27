@@ -5,6 +5,10 @@ from xml.etree import ElementTree as ET
 import cv2
 import numpy as np
 import pytest
+from databox.segmentation.cvat_shape_repair import (
+    deduplicate_points,
+    repair_shape,
+)
 from databox.segmentation.cvat_xml_to_mmseg import (
     Config,
     config_from_args,
@@ -32,6 +36,7 @@ def _config(**kwargs):
         "ignore_index": 255,
         "ignore_palette": (128, 128, 128),
         "polyline_width": 5,
+        "repair_polyline_width": 1,
         "strict_categories": False,
         "palette": [(0, 0, 0), (255, 255, 255), (0, 255, 0)],
         "polygon_categories": ["object"],
@@ -146,6 +151,66 @@ def test_yaml_mode_reads_input_and_output_from_cli(tmp_path):
     assert config.ignore_palette == (128, 128, 128)
     assert config.polygon_categories == ["object"]
     assert config.polyline_categories == ["line"]
+    assert config.repair_self_intersections is False
+    assert config.self_intersection_threshold == 10
+    assert config.polyline_diff_threshold == 10
+    assert config.repair_polyline_width == 1
+
+
+def test_yaml_self_intersection_options_can_be_overridden_by_cli(tmp_path):
+    config_path = tmp_path / "params.yaml"
+    config_path.write_text(
+        """cvat_xml_to_mmseg:
+  seed: 7
+  categories: [background, object, line]
+  polygon_categories: [object]
+  polyline_categories: [line]
+  palette: [[0, 0, 0], [255, 255, 255], [0, 255, 0]]
+  ignore_palette: [128, 128, 128]
+  repair_self_intersections: true
+  self_intersection_threshold: 12
+  polyline_diff_threshold: 14
+  repair_polyline_width: 2
+"""
+    )
+
+    yaml_config = config_from_args(
+        SimpleNamespace(
+            yaml=True,
+            config=config_path,
+            param_name="cvat_xml_to_mmseg",
+            input="annotations.xml",
+            output="out",
+            repair_self_intersections=None,
+            self_intersection_threshold=None,
+            polyline_diff_threshold=None,
+            repair_polyline_width=None,
+        )
+    )
+
+    assert yaml_config.repair_self_intersections is True
+    assert yaml_config.self_intersection_threshold == 12
+    assert yaml_config.polyline_diff_threshold == 14
+    assert yaml_config.repair_polyline_width == 2
+
+    config = config_from_args(
+        SimpleNamespace(
+            yaml=True,
+            config=config_path,
+            param_name="cvat_xml_to_mmseg",
+            input="annotations.xml",
+            output="out",
+            repair_self_intersections=False,
+            self_intersection_threshold=3,
+            polyline_diff_threshold=4,
+            repair_polyline_width=3,
+        )
+    )
+
+    assert config.repair_self_intersections is False
+    assert config.self_intersection_threshold == 3
+    assert config.polyline_diff_threshold == 4
+    assert config.repair_polyline_width == 3
 
 
 def test_cli_mode_requires_palette():
@@ -326,6 +391,22 @@ def test_polyline_width_validation():
         validate_config(_config(polyline_width=21))
 
 
+def test_self_intersection_threshold_validation():
+    validate_config(_config(self_intersection_threshold=0, polyline_diff_threshold=0))
+
+    with pytest.raises(ValueError, match="self_intersection_threshold"):
+        validate_config(_config(self_intersection_threshold=-1))
+
+    with pytest.raises(ValueError, match="polyline_diff_threshold"):
+        validate_config(_config(polyline_diff_threshold=-1))
+
+    with pytest.raises(ValueError, match="repair_polyline_width"):
+        validate_config(_config(repair_polyline_width=0))
+
+    with pytest.raises(ValueError, match="repair_polyline_width"):
+        validate_config(_config(repair_polyline_width=21))
+
+
 def test_branch_category_validation():
     with pytest.raises(ValueError, match="polygon_categories missing from categories"):
         validate_config(_config(polygon_categories=["missing"]))
@@ -405,6 +486,255 @@ def test_polygon_annotation_lines_keep_original_float_points():
     )
 
     assert lines == ["1 1.25 1.5 6.75 1.125 6.5 6.25"]
+
+
+def test_repair_shape_deduplicates_points_before_detection():
+    points = np.array(
+        [
+            [1.0, 1.0],
+            [6.0, 1.0],
+            [6.0, 6.0],
+            [1.0, 6.0],
+            [1.0, 6.0],
+            [1.0, 1.0],
+        ]
+    )
+
+    result = repair_shape(points, "polygon", (8, 8), threshold=0)
+
+    assert result.points.tolist() == [
+        [1.0, 1.0],
+        [6.0, 1.0],
+        [6.0, 6.0],
+        [1.0, 6.0],
+    ]
+    assert result.intersections == ()
+    assert result.diff_pixels == 0
+    assert result.needs_review is False
+
+
+def test_deduplicate_points_preserves_order_and_removes_all_repeats():
+    points = [(1, 1), (2, 2), (1, 1), (3, 3), (2, 2)]
+
+    assert deduplicate_points(points).tolist() == [
+        [1.0, 1.0],
+        [2.0, 2.0],
+        [3.0, 3.0],
+    ]
+
+
+def test_annotation_lines_export_without_duplicate_points():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="8" height="8">
+          <polygon label="object" points="1,1;6,1;6,6;1,6;1,6;1,1" />
+          <polyline label="line" points="1,1;3,3;3,3;1,1" />
+        </image>"""
+    )
+
+    polygon_lines = polygon_annotation_lines(
+        image,
+        ["background", "object", "line"],
+        ["object"],
+    )
+    polyline_lines = polyline_annotation_lines(
+        image,
+        ["background", "object", "line"],
+        ["line"],
+    )
+
+    assert polygon_lines == ["1 1 1 6 1 6 6 1 6"]
+    assert polyline_lines == ["2 1 1 3 3"]
+
+
+def test_annotation_lines_keep_original_points_when_repair_is_disabled():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="8" height="8">
+          <polygon label="object" points="1,1;6,6;1,6;6,1" />
+          <polyline label="line" points="1,1;3,3;1,3;3,1" />
+        </image>"""
+    )
+
+    polygon_lines = polygon_annotation_lines(
+        image,
+        ["background", "object", "line"],
+        ["object"],
+        repair_self_intersections=False,
+        self_intersection_threshold=0,
+    )
+    polyline_lines = polyline_annotation_lines(
+        image,
+        ["background", "object", "line"],
+        ["line"],
+        repair_self_intersections=False,
+        polyline_diff_threshold=0,
+        repair_polyline_width=1,
+    )
+
+    assert polygon_lines == ["1 1 1 6 6 1 6 6 1"]
+    assert polyline_lines == ["2 1 1 3 3 1 3 3 1"]
+
+
+def test_polygon_annotation_lines_can_repair_a_small_self_intersection():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="8" height="8">
+          <polygon label="object" points="1,1;6,6;1,6;6,1" />
+        </image>"""
+    )
+
+    lines = polygon_annotation_lines(
+        image,
+        ["background", "object"],
+        ["object"],
+        repair_self_intersections=True,
+        self_intersection_threshold=10,
+    )
+
+    assert lines == ["1 1 1 3.5 3.5 6 1"]
+
+
+def test_self_intersection_repair_keeps_large_changes_for_manual_review(caplog):
+    image = _image(
+        """<image id="0" name="foo.jpg" width="100" height="100">
+          <polygon label="object" points="1,1;90,90;1,90;90,1" />
+        </image>"""
+    )
+
+    lines = polygon_annotation_lines(
+        image,
+        ["background", "object"],
+        ["object"],
+        repair_self_intersections=True,
+        self_intersection_threshold=10,
+    )
+
+    assert lines == ["1 1 1 90 90 1 90 90 1"]
+    assert "manual review is required" in caplog.text
+
+
+def test_polyline_annotation_lines_can_repair_with_line_pixel_threshold():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="8" height="8">
+          <polyline label="line" points="1,1;3,3;1,3;3,1" />
+        </image>"""
+    )
+
+    lines = polyline_annotation_lines(
+        image,
+        ["background", "line"],
+        ["line"],
+        repair_self_intersections=True,
+        polyline_diff_threshold=10,
+        repair_polyline_width=1,
+    )
+
+    assert lines == ["1 1 1 1 3 3 3 3 1"]
+
+
+def test_polyline_diff_threshold_controls_acceptance_separately_from_width():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="8" height="8">
+          <polyline label="line" points="1,1;3,3;1,3;3,1" />
+        </image>"""
+    )
+
+    kept = polyline_annotation_lines(
+        image,
+        ["background", "line"],
+        ["line"],
+        repair_self_intersections=True,
+        polyline_diff_threshold=2,
+        repair_polyline_width=1,
+    )
+    repaired = polyline_annotation_lines(
+        image,
+        ["background", "line"],
+        ["line"],
+        repair_self_intersections=True,
+        polyline_diff_threshold=3,
+        repair_polyline_width=1,
+    )
+
+    assert kept == ["1 1 1 3 3 1 3 3 1"]
+    assert repaired == ["1 1 1 1 3 3 3 3 1"]
+
+
+def test_conversion_repairs_txt_sidecars_without_changing_masks(tmp_path):
+    image_one = tmp_path / "one.jpg"
+    image_two = tmp_path / "two.jpg"
+    cv2.imwrite(str(image_one), np.zeros((8, 8, 3), dtype=np.uint8))
+    cv2.imwrite(str(image_two), np.zeros((8, 8, 3), dtype=np.uint8))
+    annotations = tmp_path / "annotations.xml"
+    _write_annotations(
+        annotations,
+        """<annotations>
+          <meta>
+            <task>
+              <labels>
+                <label><name>background</name></label>
+                <label><name>object</name></label>
+                <label><name>line</name></label>
+              </labels>
+            </task>
+          </meta>
+          <image id="0" name="one.jpg" width="8" height="8">
+            <polygon label="object" points="1,1;6,6;1,6;6,1" />
+          </image>
+          <image id="1" name="two.jpg" width="8" height="8">
+            <polyline label="line" points="1,1;3,3;1,3;3,1" />
+          </image>
+        </annotations>""",
+    )
+    vehicle_labels = _write_vehicle_labels(tmp_path, "one", "two")
+    output = tmp_path / "prepared"
+
+    convert_cvat_xml_to_mmseg(
+        _config(
+            annotations=annotations,
+            output=output,
+            train=0.5,
+            vehicle_label_dir=vehicle_labels,
+            repair_self_intersections=True,
+            self_intersection_threshold=10,
+            polyline_diff_threshold=10,
+            repair_polyline_width=1,
+            polyline_width=5,
+        )
+    )
+
+    original_one = _image(
+        '<image id="0" name="one.jpg" width="8" height="8">'
+        '<polygon label="object" points="1,1;6,6;1,6;6,1" />'
+        "</image>"
+    )
+    original_mask = rasterize_shape_branch(
+        original_one,
+        "polygon",
+        ["object"],
+        [],
+    )
+    with Image.open(output / "annotations" / "one_polygon.png") as mask:
+        assert np.array_equal(np.asarray(mask), original_mask)
+    assert (output / "annotations" / "one_polygon.txt").read_text() == (
+        "1 1 1 3.5 3.5 6 1\n"
+    )
+
+    original_two = _image(
+        '<image id="1" name="two.jpg" width="8" height="8">'
+        '<polyline label="line" points="1,1;3,3;1,3;3,1" />'
+        "</image>"
+    )
+    original_polyline_mask = rasterize_shape_branch(
+        original_two,
+        "polyline",
+        ["line"],
+        [],
+        polyline_width=5,
+    )
+    with Image.open(output / "annotations" / "two_polyline.png") as mask:
+        assert np.array_equal(np.asarray(mask), original_polyline_mask)
+    assert (output / "annotations" / "two_polyline.txt").read_text() == (
+        "2 1 1 1 3 3 3 3 1\n"
+    )
 
 
 def test_branch_masks_share_global_ignore_shapes():
