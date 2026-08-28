@@ -128,6 +128,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--require-existing-images",
+        action="store_true",
+        help="Require output_dir/images to exist before downloading annotations.",
+    )
+    parser.add_argument(
         "--link-images-from",
         type=Path,
         help="Create output_dir/images as a relative symlink to this image directory.",
@@ -279,6 +284,47 @@ def rewrite_image_path(
     return normalized
 
 
+def _resolve_local_image_reference(name: str, image_dir: Path) -> Path | None:
+    normalized = name.replace("\\", "/")
+    path = Path(normalized)
+    if path.is_absolute() or not normalized:
+        return None
+
+    image_root = image_dir.resolve()
+    for candidate in (image_dir / path, image_dir.parent / path):
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        try:
+            resolved.relative_to(image_root)
+        except ValueError:
+            continue
+        if resolved.is_file():
+            return resolved
+    return None
+
+
+def validate_local_image_references(xml_path: Path, image_dir: Path) -> None:
+    """Ensure normalized XML image names resolve within the local image root."""
+    if not image_dir.is_dir():
+        raise FileNotFoundError(f"Existing image directory not found: {image_dir}")
+
+    missing: list[str] = []
+    for image in ET.parse(xml_path).getroot().iterfind("./image"):
+        name = image.attrib.get("name")
+        if name is None or _resolve_local_image_reference(name, image_dir) is None:
+            missing.append(name or "<missing name>")
+
+    if missing:
+        preview = ", ".join(repr(name) for name in missing[:5])
+        suffix = "" if len(missing) <= 5 else f", ... ({len(missing)} total)"
+        raise ValueError(
+            f"normalized image path does not resolve under {image_dir}: "
+            f"{preview}{suffix}"
+        )
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as f:
@@ -349,6 +395,14 @@ def timestamp_now() -> str:
 
 def run(args: argparse.Namespace) -> Path:
     output_dir = args.output_dir
+    require_existing_images = getattr(args, "require_existing_images", False)
+    if require_existing_images:
+        image_dir = output_dir / "images"
+        if not image_dir.is_dir():
+            raise FileNotFoundError(
+                f"existing image directory is required before CVAT download: "
+                f"{image_dir}"
+            )
     output_dir.mkdir(parents=True, exist_ok=True)
 
     link_images_from = getattr(args, "link_images_from", None)
@@ -378,6 +432,8 @@ def run(args: argparse.Namespace) -> Path:
             strip_prefix=args.strip_prefix,
             add_prefix=args.add_prefix,
         )
+        if require_existing_images:
+            validate_local_image_references(temp_xml, output_dir / "images")
         xml_digest = sha256_cvat_annotation_content(temp_xml)[:HASH_LENGTH]
 
         existing_xml = find_existing_annotation(output_dir, xml_digest)
