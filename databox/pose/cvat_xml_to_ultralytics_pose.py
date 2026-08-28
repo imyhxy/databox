@@ -295,9 +295,7 @@ def _image_to_label_lines(
                 continue
             group_id = _parse_group_id(shape.attrib.get("group_id"))
             if group_id is None:
-                _warn(
-                    f"image={image_name}: wheel box has no valid group_id; skipped"
-                )
+                _warn(f"image={image_name}: wheel box has no valid group_id; skipped")
                 skipped_shape_count += 1
                 continue
             groups.setdefault(group_id, GroupMembers([], [])).boxes.append(shape)
@@ -319,9 +317,7 @@ def _image_to_label_lines(
                 continue
             groups.setdefault(group_id, GroupMembers([], [])).skeletons.append(shape)
         else:
-            _warn(
-                f"image={image_name}: unsupported annotation <{shape.tag}>; skipped"
-            )
+            _warn(f"image={image_name}: unsupported annotation <{shape.tag}>; skipped")
             skipped_shape_count += 1
 
     lines: list[str] = []
@@ -367,8 +363,7 @@ def _pair_to_label_line(
     _parse_bool(skeleton.attrib.get("occluded"), "skeleton occluded")
 
     coordinates = {
-        name: _parse_float_attribute(box, name)
-        for name in ("xtl", "ytl", "xbr", "ybr")
+        name: _parse_float_attribute(box, name) for name in ("xtl", "ytl", "xbr", "ybr")
     }
     xtl, ytl = coordinates["xtl"], coordinates["ytl"]
     xbr, ybr = coordinates["xbr"], coordinates["ybr"]
@@ -397,8 +392,7 @@ def _pair_to_label_line(
             ]
         )
     return " ".join(
-        str(value) if isinstance(value, int) else f"{value:.6f}"
-        for value in values
+        str(value) if isinstance(value, int) else f"{value:.6f}" for value in values
     )
 
 
@@ -567,8 +561,10 @@ def _validate_relative_image_path(relative: Path, source: Path) -> None:
 def _paths_overlap(first: Path, second: Path) -> bool:
     first = first.resolve()
     second = second.resolve()
-    return first == second or _is_relative_to(first, second) or _is_relative_to(
-        second, first
+    return (
+        first == second
+        or _is_relative_to(first, second)
+        or _is_relative_to(second, first)
     )
 
 
