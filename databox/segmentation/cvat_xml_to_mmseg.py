@@ -549,6 +549,8 @@ def polygon_annotation_lines(
     categories: list[str],
     polygon_categories: list[str],
     *,
+    ignore_categories: list[str] = (),
+    ignore_index: int = 255,
     repair_self_intersections: bool = False,
     self_intersection_threshold: int = 10,
 ) -> list[str]:
@@ -560,7 +562,7 @@ def polygon_annotation_lines(
         if child.tag != "polygon":
             continue
         label = child.attrib["label"]
-        if label not in polygon_categories:
+        if label not in polygon_categories and label not in ignore_categories:
             continue
         points = deduplicate_points(parse_float_points(child.attrib["points"]))
         if len(points) < 3:
@@ -575,7 +577,10 @@ def polygon_annotation_lines(
             enabled=repair_self_intersections,
             threshold=self_intersection_threshold,
         )
-        values = [str(categories.index(label))]
+        class_id = (
+            ignore_index if label in ignore_categories else categories.index(label)
+        )
+        values = [str(class_id)]
         for x, y in points:
             values.extend((format_float(x), format_float(y)))
         lines.append(" ".join(values))
@@ -1177,6 +1182,8 @@ def convert_cvat_xml_to_mmseg(config: Config) -> None:
                 image,
                 config.categories,
                 config.polygon_categories,
+                ignore_categories=config.ignore_categories,
+                ignore_index=config.ignore_index,
                 repair_self_intersections=config.repair_self_intersections,
                 self_intersection_threshold=config.self_intersection_threshold,
             )

@@ -488,6 +488,26 @@ def test_polygon_annotation_lines_keep_original_float_points():
     assert lines == ["1 1.25 1.5 6.75 1.125 6.5 6.25"]
 
 
+def test_polygon_annotation_lines_write_ignore_polygons_as_ignore_index():
+    image = _image(
+        """<image id="0" name="foo.jpg" width="10" height="10">
+          <polygon label="object" points="1,1;6,1;6,6" />
+          <polygon label="ignore" points="0,0;2,0;2,2" />
+          <polyline label="ignore" points="0,0;1,1" />
+        </image>"""
+    )
+
+    lines = polygon_annotation_lines(
+        image,
+        ["background", "object"],
+        ["object"],
+        ignore_categories=["ignore"],
+        ignore_index=255,
+    )
+
+    assert lines == ["1 1 1 6 1 6 6", "255 0 0 2 0 2 2"]
+
+
 def test_repair_shape_deduplicates_points_before_detection():
     points = np.array(
         [
@@ -983,7 +1003,7 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
     ]
     assert (
         out / "SegmentationClass" / "one_polygon.txt"
-    ).read_text() == "1 1 1 6 1 6 6 1 6\n"
+    ).read_text() == "1 1 1 6 1 6 6 1 6\n255 3 3 4 3 4 4 3 4\n"
     assert (out / "SegmentationClass" / "two_polygon.txt").read_text() == ""
     assert (out / "SegmentationClass" / "one_polyline.txt").read_text() == ""
     assert (
