@@ -7,7 +7,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 MANIFEST_FILENAME = "manifest.jsonl"
-MASK_PATH_KEYS = ("polygon", "polyline", "vehicle", "main")
+MASK_PATH_KEYS = ("polygon", "polyline", "main")
 REQUIRED_FIELDS = (
     "sample_id",
     "task_name",

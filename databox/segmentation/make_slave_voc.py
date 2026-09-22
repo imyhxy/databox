@@ -19,8 +19,8 @@ except ModuleNotFoundError:
 
 BRIGHTNESS_SUFFIX = re.compile(r"_0G_\d{3}$")
 SPLITS = ("train", "val")
-ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt", "_vehicle.txt")
-BRANCH_MASK_SUFFIXES = ("", "_polygon", "_polyline", "_vehicle")
+ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt")
+BRANCH_MASK_SUFFIXES = ("", "_polygon", "_polyline")
 
 
 @dataclass(frozen=True)
@@ -56,7 +56,6 @@ def clean_output(output: Path) -> None:
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
-        "labelmap_vehicle.txt",
     ):
         labelmap = output / filename
         if labelmap.exists():
@@ -139,7 +138,6 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
         master / "labelmap.txt",
         master / "labelmap_polygon.txt",
         master / "labelmap_polyline.txt",
-        master / "labelmap_vehicle.txt",
     ]
     for labelmap in labelmaps:
         if not labelmap.exists():
@@ -208,9 +206,6 @@ def build_slave_voc_dataset(master: Path, slave_raw: Path, output: Path) -> int:
                     .relative_to(output)
                     .as_posix(),
                     "polyline": (mask_dir / f"{dst_stem}_polyline.png")
-                    .relative_to(output)
-                    .as_posix(),
-                    "vehicle": (mask_dir / f"{dst_stem}_vehicle.png")
                     .relative_to(output)
                     .as_posix(),
                     "main": (mask_dir / f"{dst_stem}.png")

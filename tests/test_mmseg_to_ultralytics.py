@@ -23,8 +23,6 @@ def _make_dataset(root):
     _write_palette_mask(mask_dir / "bar_polygon.png", [0, 2, 0, 255])
     _write_palette_mask(mask_dir / "foo_polyline.png", [0, 3, 0, 255])
     _write_palette_mask(mask_dir / "bar_polyline.png", [0, 4, 0, 255])
-    _write_palette_mask(mask_dir / "foo_vehicle.png", [0, 1, 0, 255])
-    _write_palette_mask(mask_dir / "bar_vehicle.png", [0, 255, 0, 1])
     (split_dir / "train.txt").write_text("foo\n")
     (split_dir / "val.txt").write_text("bar\n")
     write_manifest(
@@ -38,7 +36,6 @@ def _make_dataset(root):
                 "mask_paths": {
                     "polygon": f"SegmentationClass/{stem}_polygon.png",
                     "polyline": f"SegmentationClass/{stem}_polyline.png",
-                    "vehicle": f"SegmentationClass/{stem}_vehicle.png",
                     "main": f"SegmentationClass/{stem}.png",
                 },
                 "width": 2,
@@ -93,16 +90,12 @@ def test_build_ultralytics_dataset_converts_palette_masks_to_l_mode(tmp_path):
     with Image.open(output / "polyline_masks" / "foo.png") as image:
         assert image.mode == "L"
         assert list(image.getdata()) == [0, 3, 0, 255]
-    with Image.open(output / "vehicle_masks" / "foo.png") as image:
-        assert image.mode == "L"
-        assert list(image.getdata()) == [0, 1, 0, 255]
 
     manifest = read_manifest(output)
     assert manifest[0]["image_path"] == "images/foo.jpg"
     assert manifest[0]["mask_paths"] == {
         "polygon": "polygon_masks/foo.png",
         "polyline": "polyline_masks/foo.png",
-        "vehicle": "vehicle_masks/foo.png",
         "main": "labels/foo.png",
     }
     assert manifest[0]["width"] == 2

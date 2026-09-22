@@ -16,7 +16,6 @@ SPLIT_FILE_STEMS = ("train", "val", "trainval", "test")
 BRANCH_MASK_SUFFIXES = {
     "polygon": "_polygon",
     "polyline": "_polyline",
-    "vehicle": "_vehicle",
 }
 OCNET_WEIGHT_SOURCE = (
     "https://github.com/openseg-group/OCNet.pytorch/issues/14#issuecomment-528144988"
@@ -193,7 +192,6 @@ def analyze_dataset(
     mask_paths = _list_mask_paths(layout.masks_dir)
     polygon_mask_paths = _list_branch_mask_paths(layout.masks_dir, "polygon")
     polyline_mask_paths = _list_branch_mask_paths(layout.masks_dir, "polyline")
-    vehicle_mask_paths = _list_branch_mask_paths(layout.masks_dir, "vehicle")
     image_stems = {path.stem for path in image_paths}
     mask_stems = {path.stem for path in mask_paths}
     split_stems = _read_split_stems(layout.split_dir)
@@ -258,17 +256,6 @@ def analyze_dataset(
         ignore_index,
         branch_name="polyline",
     )
-    vehicle_stats = _analyze_branch_masks(
-        vehicle_mask_paths,
-        [
-            ClassInfo(id=0, name="background", color_rgb=(0, 0, 0)),
-            ClassInfo(id=1, name="vehicle", color_rgb=(255, 255, 255)),
-            ClassInfo(id=255, name="ignore", color_rgb=(128, 128, 128)),
-        ],
-        ignore_index,
-        branch_name="vehicle",
-        infer_classes=False,
-    )
     warnings = _make_warnings(
         classes=classes,
         image_stems=image_stems,
@@ -321,10 +308,8 @@ def analyze_dataset(
         "class_weights_ocnet": class_weights,
         "polygon_branch": polygon_stats,
         "polyline_branch": polyline_stats,
-        "vehicle_branch": vehicle_stats,
         "class_weights_ocnet_polygon": polygon_stats["class_weights_ocnet"],
         "class_weights_ocnet_polyline": polyline_stats["class_weights_ocnet"],
-        "class_weights_ocnet_vehicle": vehicle_stats["class_weights_ocnet"],
         "split_stats": split_stats,
         "ignore_index": {
             "value": ignore_index,
@@ -777,15 +762,6 @@ def draw_dataset_card(data: dict[str, Any], output_path: Path) -> None:
     subtitle = (
         f"{data['image_count']} images / {data['mask_count']} masks / "
         f"{_format_int(data['total_pixels'])} labeled pixels"
-    )
-    vehicle_branch = data["vehicle_branch"]
-    vehicle_row = next(
-        row for row in vehicle_branch["classes"] if row["name"] == "vehicle"
-    )
-    subtitle += (
-        f" / vehicle: {vehicle_branch['mask_count']} masks, "
-        f"{_format_int(vehicle_row['pixel_count'])} primary px, "
-        f"{_format_int(vehicle_branch['ignore_index']['pixel_count'])} ignore px"
     )
     draw.text((38, 66), subtitle, fill=(71, 85, 105), font=font)
 

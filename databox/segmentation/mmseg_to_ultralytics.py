@@ -75,12 +75,10 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
     output_labels_dir = output_root / "labels"
     output_polygon_masks_dir = output_root / "polygon_masks"
     output_polyline_masks_dir = output_root / "polyline_masks"
-    output_vehicle_masks_dir = output_root / "vehicle_masks"
     output_images_dir.mkdir(parents=True)
     output_labels_dir.mkdir(parents=True)
     output_polygon_masks_dir.mkdir(parents=True)
     output_polyline_masks_dir.mkdir(parents=True)
-    output_vehicle_masks_dir.mkdir(parents=True)
 
     output_manifest = []
     for stem in sorted(needed_stems):
@@ -90,7 +88,6 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
         output_mask = output_labels_dir / f"{stem}.png"
         output_polygon_mask = output_polygon_masks_dir / f"{stem}.png"
         output_polyline_mask = output_polyline_masks_dir / f"{stem}.png"
-        output_vehicle_mask = output_vehicle_masks_dir / f"{stem}.png"
         _save_plain_mask(mask_dir / f"{stem}.png", output_mask)
         _save_plain_mask(
             mask_dir / f"{stem}_polygon.png",
@@ -100,7 +97,6 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
             mask_dir / f"{stem}_polyline.png",
             output_polyline_mask,
         )
-        _save_plain_mask(mask_dir / f"{stem}_vehicle.png", output_vehicle_mask)
         record = dict(manifest_by_stem[stem])
         record.update(
             {
@@ -110,7 +106,6 @@ def build_ultralytics_dataset(dataset_root: Path, output_root: Path) -> int:
                     "polyline": output_polyline_mask.relative_to(
                         output_root
                     ).as_posix(),
-                    "vehicle": output_vehicle_mask.relative_to(output_root).as_posix(),
                     "main": output_mask.relative_to(output_root).as_posix(),
                 },
             }
@@ -176,22 +171,17 @@ def _validate_split_stems(
     missing_polyline_masks = sorted(
         stem for stem in stems if not (mask_dir / f"{stem}_polyline.png").exists()
     )
-    missing_vehicle_masks = sorted(
-        stem for stem in stems if not (mask_dir / f"{stem}_vehicle.png").exists()
-    )
     if (
         missing_images
         or missing_masks
         or missing_polygon_masks
         or missing_polyline_masks
-        or missing_vehicle_masks
     ):
         raise ValueError(
             f"{dataset_root} split files reference missing images or masks: "
             f"images={missing_images[:5]}, masks={missing_masks[:5]}, "
             f"polygon_masks={missing_polygon_masks[:5]}, "
             f"polyline_masks={missing_polyline_masks[:5]}"
-            f", vehicle_masks={missing_vehicle_masks[:5]}"
         )
 
 
@@ -201,7 +191,6 @@ def _clean_output(output_root: Path) -> None:
         "labels",
         "polygon_masks",
         "polyline_masks",
-        "vehicle_masks",
     ):
         path = output_root / dirname
         if path.exists():

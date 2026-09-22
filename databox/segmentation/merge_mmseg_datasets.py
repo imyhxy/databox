@@ -12,13 +12,12 @@ except ModuleNotFoundError:
 
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp", ".tif", ".tiff"}
 MASK_EXTENSIONS = {".png", ".bmp", ".tif", ".tiff"}
-BRANCH_MASK_SUFFIXES = ("_polygon", "_polyline", "_vehicle")
-ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt", "_vehicle.txt")
+BRANCH_MASK_SUFFIXES = ("_polygon", "_polyline")
+ANNOTATION_SUFFIXES = ("_polygon.txt", "_polyline.txt")
 LABELMAP_FILENAMES = (
     "labelmap.txt",
     "labelmap_polygon.txt",
     "labelmap_polyline.txt",
-    "labelmap_vehicle.txt",
 )
 
 
@@ -163,9 +162,6 @@ def merge_datasets(
                         "polyline": (output_masks_dir / f"{merged_stem}_polyline.png")
                         .relative_to(output_root)
                         .as_posix(),
-                        "vehicle": (output_masks_dir / f"{merged_stem}_vehicle.png")
-                        .relative_to(output_root)
-                        .as_posix(),
                         "main": (output_masks_dir / f"{merged_stem}.png")
                         .relative_to(output_root)
                         .as_posix(),
@@ -253,7 +249,6 @@ def _check_merged_mask_name_collisions(merged_stem: str, used_stems: set[str]) -
         f"{merged_stem}.png",
         f"{merged_stem}_polygon.png",
         f"{merged_stem}_polyline.png",
-        f"{merged_stem}_vehicle.png",
         *(f"{merged_stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
     }
     for used_stem in used_stems:
@@ -261,7 +256,6 @@ def _check_merged_mask_name_collisions(merged_stem: str, used_stems: set[str]) -
             f"{used_stem}.png",
             f"{used_stem}_polygon.png",
             f"{used_stem}_polyline.png",
-            f"{used_stem}_vehicle.png",
             *(f"{used_stem}{suffix}" for suffix in ANNOTATION_SUFFIXES),
         }
         overlap = sorted(output_mask_names & used_mask_names)

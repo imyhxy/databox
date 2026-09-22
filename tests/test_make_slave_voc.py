@@ -18,7 +18,6 @@ def _make_master(root):
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
-        "labelmap_vehicle.txt",
     ):
         (master / filename).write_text(f"{filename}\n")
     (master / "SegmentationClass" / "scene-a_0G_080.png").write_text("mask-a")
@@ -28,17 +27,11 @@ def _make_master(root):
     (master / "SegmentationClass" / "scene-a_0G_080_polyline.png").write_text(
         "mask-a-polyline"
     )
-    (master / "SegmentationClass" / "scene-a_0G_080_vehicle.png").write_text(
-        "mask-a-vehicle"
-    )
     (master / "SegmentationClass" / "scene-a_0G_080_polygon.txt").write_text(
         "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
     )
     (master / "SegmentationClass" / "scene-a_0G_080_polyline.txt").write_text(
         "2 1.25 1.5 6.75 6.125\n"
-    )
-    (master / "SegmentationClass" / "scene-a_0G_080_vehicle.txt").write_text(
-        "1 1 1 2 1 2 2\n"
     )
     (master / "SegmentationClass" / "scene-b_0G_080.png").write_text("mask-b")
     (master / "SegmentationClass" / "scene-b_0G_080_polygon.png").write_text(
@@ -47,14 +40,10 @@ def _make_master(root):
     (master / "SegmentationClass" / "scene-b_0G_080_polyline.png").write_text(
         "mask-b-polyline"
     )
-    (master / "SegmentationClass" / "scene-b_0G_080_vehicle.png").write_text(
-        "mask-b-vehicle"
-    )
     (master / "SegmentationClass" / "scene-b_0G_080_polygon.txt").write_text("")
     (master / "SegmentationClass" / "scene-b_0G_080_polyline.txt").write_text(
         "2 2.25 2.5 7.75 7.125\n"
     )
-    (master / "SegmentationClass" / "scene-b_0G_080_vehicle.txt").write_text("")
     (master / "ImageSets" / "Segmentation" / "train.txt").write_text("scene-a_0G_080\n")
     (master / "ImageSets" / "Segmentation" / "val.txt").write_text("scene-b_0G_080\n")
     _write_image(master / "JPEGImages" / "scene-a_0G_080.jpg", (10, 8))
@@ -70,7 +59,6 @@ def _make_master(root):
                 "mask_paths": {
                     "polygon": f"SegmentationClass/{stem}_polygon.png",
                     "polyline": f"SegmentationClass/{stem}_polyline.png",
-                    "vehicle": f"SegmentationClass/{stem}_vehicle.png",
                     "main": f"SegmentationClass/{stem}.png",
                 },
                 "width": 10 if stem.startswith("scene-a") else 12,
@@ -130,17 +118,11 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
         output / "SegmentationClass" / "scene-a_0G_100_polyline.png"
     ).read_text() == "mask-a-polyline"
     assert (
-        output / "SegmentationClass" / "scene-a_0G_100_vehicle.png"
-    ).read_text() == "mask-a-vehicle"
-    assert (
         output / "SegmentationClass" / "scene-a_0G_100_polygon.txt"
     ).read_text() == "1 1.25 1.5 6.75 1.125 6.5 6.25\n"
     assert (
         output / "SegmentationClass" / "scene-a_0G_100_polyline.txt"
     ).read_text() == "2 1.25 1.5 6.75 6.125\n"
-    assert (
-        output / "SegmentationClass" / "scene-a_0G_100_vehicle.txt"
-    ).read_text() == "1 1 1 2 1 2 2\n"
     assert (output / "SegmentationClass" / "scene-a_0G_120.png").read_text() == (
         "mask-a"
     )
@@ -184,7 +166,6 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
         "labelmap.txt",
         "labelmap_polygon.txt",
         "labelmap_polyline.txt",
-        "labelmap_vehicle.txt",
     ):
         assert (output / filename).read_text() == f"{filename}\n"
     manifest = read_manifest(output)
@@ -196,7 +177,6 @@ def test_build_slave_voc_dataset_reuses_masks_and_master_splits(tmp_path):
     assert manifest[0]["mask_paths"] == {
         "polygon": "SegmentationClass/scene-a_0G_100_polygon.png",
         "polyline": "SegmentationClass/scene-a_0G_100_polyline.png",
-        "vehicle": "SegmentationClass/scene-a_0G_100_vehicle.png",
         "main": "SegmentationClass/scene-a_0G_100.png",
     }
     assert manifest[0]["width"] == 20
@@ -212,17 +192,11 @@ def test_build_slave_voc_dataset_rejects_duplicate_master_scene_keys(tmp_path):
     (master / "SegmentationClass" / "scene-a_0G_100_polyline.png").write_text(
         "mask-a-100-polyline"
     )
-    (master / "SegmentationClass" / "scene-a_0G_100_vehicle.png").write_text(
-        "mask-a-100-vehicle"
-    )
     (master / "SegmentationClass" / "scene-a_0G_100_polygon.txt").write_text(
         "1 1 1 2 1 2 2\n"
     )
     (master / "SegmentationClass" / "scene-a_0G_100_polyline.txt").write_text(
         "2 1 1 2 2\n"
-    )
-    (master / "SegmentationClass" / "scene-a_0G_100_vehicle.txt").write_text(
-        "1 1 1 2 1 2 2\n"
     )
     (master / "ImageSets" / "Segmentation" / "val.txt").write_text("scene-a_0G_100\n")
     slave = _make_slave(tmp_path)
@@ -251,17 +225,11 @@ def test_build_slave_voc_dataset_rejects_branch_mask_name_collisions(tmp_path):
         master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_polyline.png"
     ).write_text("mask-a-colliding-stem-polyline")
     (
-        master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_vehicle.png"
-    ).write_text("mask-a-colliding-stem-vehicle")
-    (
         master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_polygon.txt"
     ).write_text("1 1 1 2 1 2 2\n")
     (
         master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_polyline.txt"
     ).write_text("2 1 1 2 2\n")
-    (
-        master / "SegmentationClass" / "scene-a_0G_100_polygon_0G_080_vehicle.txt"
-    ).write_text("1 1 1 2 1 2 2\n")
     (master / "ImageSets" / "Segmentation" / "val.txt").write_text(
         "scene-b_0G_080\nscene-a_0G_100_polygon_0G_080\n"
     )
@@ -279,7 +247,6 @@ def test_build_slave_voc_dataset_rejects_branch_mask_name_collisions(tmp_path):
             "mask_paths": {
                 "polygon": f"SegmentationClass/{collision_stem}_polygon.png",
                 "polyline": f"SegmentationClass/{collision_stem}_polyline.png",
-                "vehicle": f"SegmentationClass/{collision_stem}_vehicle.png",
                 "main": f"SegmentationClass/{collision_stem}.png",
             },
             "width": 8,

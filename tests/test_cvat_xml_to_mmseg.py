@@ -41,7 +41,6 @@ def _config(**kwargs):
         "palette": [(0, 0, 0), (255, 255, 255), (0, 255, 0)],
         "polygon_categories": ["object"],
         "polyline_categories": ["line"],
-        "vehicle_label_dir": Path("vehicle"),
     }
     config.update(kwargs)
     return Config(**config)
@@ -60,15 +59,6 @@ def _write_annotations(path: Path, xml_text: str) -> None:
                 <segment><id>209</id><start>1</start><stop>999</stop></segment>
               </segments>"""
     path.write_text(xml_text.replace("<task>", metadata, 1))
-
-
-def _write_vehicle_labels(root: Path, *stems: str) -> Path:
-    directory = root / "vehicle"
-    directory.mkdir(exist_ok=True)
-    for stem in stems:
-        Image.new("L", (8, 8), 0).save(directory / f"{stem}_vehicle.png")
-        (directory / f"{stem}_vehicle.txt").write_text("")
-    return directory
 
 
 def test_parse_cvat_task_metadata_maps_segment_boundaries():
@@ -704,7 +694,6 @@ def test_conversion_repairs_txt_sidecars_without_changing_masks(tmp_path):
           </image>
         </annotations>""",
     )
-    vehicle_labels = _write_vehicle_labels(tmp_path, "one", "two")
     output = tmp_path / "prepared"
 
     convert_cvat_xml_to_mmseg(
@@ -712,7 +701,6 @@ def test_conversion_repairs_txt_sidecars_without_changing_masks(tmp_path):
             annotations=annotations,
             output=output,
             train=0.5,
-            vehicle_label_dir=vehicle_labels,
             repair_self_intersections=True,
             self_intersection_threshold=10,
             polyline_diff_threshold=10,
@@ -829,7 +817,6 @@ def test_convert_writes_mmseg_layout(tmp_path):
     )
 
     out = tmp_path / "prepared"
-    vehicle_labels = _write_vehicle_labels(tmp_path, "one", "two")
     convert_cvat_xml_to_mmseg(
         _config(
             annotations=annotations,
@@ -837,7 +824,6 @@ def test_convert_writes_mmseg_layout(tmp_path):
             train=0.5,
             categories=["background", "object", "line"],
             polyline_width=3,
-            vehicle_label_dir=vehicle_labels,
         )
     )
 
@@ -849,19 +835,15 @@ def test_convert_writes_mmseg_layout(tmp_path):
         "one.png",
         "one_polygon.png",
         "one_polyline.png",
-        "one_vehicle.png",
         "two.png",
         "two_polygon.png",
         "two_polyline.png",
-        "two_vehicle.png",
     ]
     assert shape_txts == [
         "one_polygon.txt",
         "one_polyline.txt",
-        "one_vehicle.txt",
         "two_polygon.txt",
         "two_polyline.txt",
-        "two_vehicle.txt",
     ]
     assert (
         out / "annotations" / "one_polygon.txt"
@@ -890,11 +872,6 @@ def test_convert_writes_mmseg_layout(tmp_path):
         "background:0,0,0::",
         "line:0,255,0::",
     ]
-    assert (out / "labelmap_vehicle.txt").read_text().splitlines()[1:] == [
-        "background:0,0,0::",
-        "vehicle:255,255,255::",
-        "ignore:128,128,128::",
-    ]
     assert not (out / "test.txt").exists()
     assert not (out / "JPEGImages").exists()
     assert not (out / "SegmentationClass").exists()
@@ -909,7 +886,6 @@ def test_convert_writes_mmseg_layout(tmp_path):
     assert manifest["one.jpg"]["mask_paths"] == {
         "polygon": "annotations/one_polygon.png",
         "polyline": "annotations/one_polyline.png",
-        "vehicle": "annotations/one_vehicle.png",
         "main": "annotations/one.png",
     }
     assert manifest["one.jpg"]["width"] == 8
@@ -958,7 +934,6 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
     )
 
     out = tmp_path / "prepared"
-    vehicle_labels = _write_vehicle_labels(tmp_path, "one", "two")
     (out / "images").mkdir(parents=True)
     (out / "annotations").mkdir()
     (out / "train.txt").write_text("stale\n")
@@ -975,7 +950,6 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
             ignore_categories=["ignore"],
             polyline_width=3,
             layout="voc",
-            vehicle_label_dir=vehicle_labels,
         )
     )
 
@@ -987,19 +961,15 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
         "one.png",
         "one_polygon.png",
         "one_polyline.png",
-        "one_vehicle.png",
         "two.png",
         "two_polygon.png",
         "two_polyline.png",
-        "two_vehicle.png",
     ]
     assert shape_txts == [
         "one_polygon.txt",
         "one_polyline.txt",
-        "one_vehicle.txt",
         "two_polygon.txt",
         "two_polyline.txt",
-        "two_vehicle.txt",
     ]
     assert (
         out / "SegmentationClass" / "one_polygon.txt"
@@ -1044,7 +1014,6 @@ def test_convert_writes_voc_layout_and_cleans_stale_mmseg_outputs(tmp_path):
     assert manifest["one.jpg"]["mask_paths"] == {
         "polygon": "SegmentationClass/one_polygon.png",
         "polyline": "SegmentationClass/one_polyline.png",
-        "vehicle": "SegmentationClass/one_vehicle.png",
         "main": "SegmentationClass/one.png",
     }
     assert manifest["one.jpg"]["width"] == 8
@@ -1118,7 +1087,6 @@ def test_strict_categories_allows_background_not_in_cvat(tmp_path):
         </annotations>""",
     )
 
-    vehicle_labels = _write_vehicle_labels(tmp_path, "one", "two")
     convert_cvat_xml_to_mmseg(
         _config(
             annotations=annotations,
@@ -1126,7 +1094,6 @@ def test_strict_categories_allows_background_not_in_cvat(tmp_path):
             train=0.5,
             categories=["background", "object", "line"],
             strict_categories=True,
-            vehicle_label_dir=vehicle_labels,
         )
     )
 

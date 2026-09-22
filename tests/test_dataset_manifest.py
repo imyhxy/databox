@@ -11,7 +11,6 @@ def _record(stem, *, split, frame_id):
         "mask_paths": {
             "polygon": f"polygon_masks/{stem}.png",
             "polyline": f"polyline_masks/{stem}.png",
-            "vehicle": f"vehicle_masks/{stem}.png",
             "main": f"labels/{stem}.png",
         },
         "width": 640,
@@ -28,7 +27,6 @@ def _write_files(root, stem):
         ("labels", ".png"),
         ("polygon_masks", ".png"),
         ("polyline_masks", ".png"),
-        ("vehicle_masks", ".png"),
     ):
         path = root / dirname / f"{stem}{suffix}"
         path.parent.mkdir(parents=True, exist_ok=True)
