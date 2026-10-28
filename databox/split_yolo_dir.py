@@ -10,6 +10,8 @@ from pathlib import Path
 
 import yaml
 
+IMAGE_EXTENSIONS = {".bmp", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -42,7 +44,10 @@ def main():
     for inp in args.inputs:
         random.seed(seed)
         inp_dir = Path(inp)
-        jpegs = sorted((inp_dir / "images").glob("*.jpg"))
+        jpegs = sorted(
+            path for path in (inp_dir / "images").glob("*")
+            if path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS
+        )
         jpegs = [osp.relpath(str(j), str(inp_dir)) for j in jpegs]
         jpegs = [f"./{j}" if not j.startswith("./") else j for j in jpegs]
         random.shuffle(jpegs)
